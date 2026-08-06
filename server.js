@@ -143,6 +143,7 @@ const server = http.createServer(async (req, res) => {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
+        'Clear-Site-Data': '"cache"',
       });
       res.end(data);
     });
