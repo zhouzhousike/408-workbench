@@ -284,6 +284,37 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 .mh-cell.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .mh-cell.future { opacity: .35; cursor: default; }
 
+/* ---------- mobile responsive ---------- */
+#mobile-menu-btn { display: none; }
+@media (max-width: 768px) {
+  body { font-size: 15px; }
+  #app { grid-template-columns: 1fr; }
+  #sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 260px; z-index: 60;
+    transform: translateX(-100%); transition: transform .22s ease;
+    box-shadow: 4px 0 24px rgba(24,32,43,.18); padding-bottom: 90px;
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar-overlay {
+    position: fixed; inset: 0; background: rgba(24,32,43,.35); z-index: 55;
+    opacity: 0; pointer-events: none; transition: opacity .2s ease;
+  }
+  #sidebar-overlay.show { opacity: 1; pointer-events: auto; }
+  #mobile-menu-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--surface); font-size: 18px; margin-right: 10px; flex: 0 0 auto;
+  }
+  #topbar { padding: 0 14px; height: 54px; }
+  .top-title { font-size: 15px; display: flex; align-items: center; }
+  #content { padding: 16px 14px 80px; }
+  .card { padding: 14px 15px; border-radius: 12px; }
+  .modal { width: 94vw; padding: 18px 16px; border-radius: 16px; }
+  #app.nav-collapsed { grid-template-columns: 1fr; }
+  #app.nav-collapsed #sidebar { width: 260px; }
+  .side-toggle { display: none; }
+}
+
 </style>
 </head>
 <body>
@@ -298,9 +329,10 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
         <button class="nav-item" id="nav-backup"><span class="ico">⚙</span> 备份 / 设置</button>
       </div>
     </aside>
+    <div id="sidebar-overlay"></div>
     <main id="main">
       <header id="topbar">
-        <div class="top-title" id="top-title">首页</div>
+        <div class="top-title" id="top-title"><button id="mobile-menu-btn" aria-label="打开菜单">☰</button><span id="top-title-text">首页</span></div>
         <div class="top-right">
           <span class="countdown" id="countdown">距初试 — 天</span>
         </div>
@@ -5093,7 +5125,9 @@ window.APP = window.APP || {};
   APP._navigate = function (key, keep) {
     if (!APP.views[key]) key = 'dashboard';
     APP.current = key;
-    document.getElementById('top-title').textContent = TITLES[key] || '首页';
+    const titleText = document.getElementById('top-title-text');
+    if (titleText) titleText.textContent = TITLES[key] || '首页';
+    else document.getElementById('top-title').textContent = TITLES[key] || '首页';
     document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.getAttribute('data-key') === key));
     const c = document.getElementById('content');
     try { (APP.views[key] || APP.views.dashboard)(c); }
@@ -5213,6 +5247,16 @@ window.APP = window.APP || {};
     toggle.appendChild(APP.el('span', { text: '折叠侧栏' }));
     sidebar.insertBefore(toggle, sidebar.firstChild);
     try { if (localStorage.getItem('yutian_sidebar_collapsed') === '1') app.classList.add('nav-collapsed'); } catch (e) {}
+    // 移动端侧栏抽屉
+    const overlay = document.getElementById('sidebar-overlay');
+    const menuBtn = document.getElementById('mobile-menu-btn');
+    function openSidebar() { sidebar.classList.add('open'); overlay && overlay.classList.add('show'); }
+    function closeSidebar() { sidebar.classList.remove('open'); overlay && overlay.classList.remove('show'); }
+    if (menuBtn) menuBtn.addEventListener('click', openSidebar);
+    if (overlay) overlay.addEventListener('click', closeSidebar);
+    document.querySelectorAll('#nav .nav-item, #nav-backup').forEach(btn => {
+      btn.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
+    });
     document.getElementById('nav-backup').addEventListener('click', openBackup);
     if (APP.initTimer) APP.initTimer();
     APP._navigate('dashboard');
