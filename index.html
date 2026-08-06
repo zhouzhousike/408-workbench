@@ -714,7 +714,7 @@ window.APP = window.APP || {};
       studyLog: {},
       knowledge: seedKnowledge(),
       math: seedMath(),
-      mathKnowledge: { '高等数学': [], '线性代数': [], '概率论': [] },
+      mathKnowledge: (() => { const o = {}; ['高等数学', '线性代数', '概率论'].forEach(c => { o[c] = (MATH_CHAPTERS[c] || []).map(ch => (ch.outline || []).map(o2 => ({ id: uid(), name: o2, chapter: ch.chapter, importance: 3, mastery: 0, notes: '' }))).flat(); }); return o; })(),
       english: { words: {}, wordRecords: {}, grammar: [], sentences: [], reading: [], cloze: [], translation: [], newtype: [], writing: { templates: [], materials: [], practice: [] }, exams: [], ability: { 词汇: 0, 阅读: 0, 写作: 0, 翻译: 0, 完形: 0, 新题型: 0 } },
       wrongQuestions: [],
       realExams: seedRealExams(),
@@ -741,7 +741,13 @@ window.APP = window.APP || {};
       if (oldState[k] === undefined) oldState[k] = fresh[k];
     });
     if (!oldState.mathKnowledge) oldState.mathKnowledge = {};
-    ['高等数学','线性代数','概率论'].forEach(c => { if (!oldState.mathKnowledge[c]) oldState.mathKnowledge[c] = []; });
+    ['高等数学','线性代数','概率论'].forEach(c => {
+      if (!oldState.mathKnowledge[c]) oldState.mathKnowledge[c] = [];
+      // 科目无知识点但章节已有课程目录时，把每章 outline 自动填充为知识点
+      if (!oldState.mathKnowledge[c].length && oldState.math && oldState.math[c] && Array.isArray(oldState.math[c])) {
+        oldState.mathKnowledge[c] = oldState.math[c].map(ch => (ch.outline || []).map(o2 => ({ id: uid(), name: o2, chapter: ch.chapter, importance: 3, mastery: 0, notes: '' }))).flat();
+      }
+    });
     // 2. 迁移 knowledge 的 chapter 字段（旧名 → 新名）
     const CHAPTER_MAP = {
       '数据结构': {
