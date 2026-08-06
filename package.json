@@ -1,0 +1,12 @@
+{
+  "name": "408-workbench",
+  "version": "1.0.0",
+  "description": "408考研工作台 - WebDAV中转代理+静态托管",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
