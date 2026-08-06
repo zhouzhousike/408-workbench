@@ -303,9 +303,12 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 #mobile-menu-btn { display: none; }
 @media (max-width: 560px) {
   body { font-size: 15px; }
-  #app { display: block; }
+  #app { display: block; height: auto; min-height: 100vh; }
+  /* 关键修复：移动端 #app 改为 block 后，#main 的 width:0 会塌缩、导致内容竖排。
+     这里强制占满宽度并锁定 100vh 高度，让 #content 内部滚动 */
+  #main { display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; min-width: 0; flex: none; }
   #sidebar {
-    position: fixed; left: 0; top: 0; bottom: 0; width: 260px; z-index: 60;
+    position: fixed; left: 0; top: 0; bottom: 0; width: 264px; max-width: 82vw; z-index: 60;
     transform: translateX(-100%); transition: transform .22s ease;
     box-shadow: 4px 0 24px rgba(24,32,43,.18); padding-bottom: 90px;
     flex: none;
@@ -323,11 +326,20 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
   }
   #topbar { padding: 0 14px; height: 54px; }
   .top-title { font-size: 15px; display: flex; align-items: center; }
-  #content { padding: 16px 14px 80px; }
+  .top-right { gap: 8px; }
+  .phase-badge { display: none; }
+  .countdown { padding: 5px 10px; font-size: 12px; }
+  .countdown b { font-size: 13px; }
+  #content { padding: 16px 14px 92px; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .card { padding: 14px 15px; border-radius: 12px; }
-  .modal { width: 94vw; padding: 18px 16px; border-radius: 16px; }
-  #app.nav-collapsed #sidebar { width: 260px; flex: none; }
+  .modal { width: 94vw; padding: 18px 16px; border-radius: 16px; max-height: 86vh; overflow-y: auto; }
+  #app.nav-collapsed #sidebar { width: 264px; max-width: 82vw; flex: none; }
   .side-toggle { display: none; }
+  /* 番茄钟在手机上改为底部全宽条，避免遮挡右侧内容 */
+  .pomo { left: 10px; right: 10px; bottom: 10px; width: auto; }
+  /* 首页左右大栏在手机上自然单列（grid 已被 720px 媒体查询置 1fr） */
+  .dash-col { gap: 14px; }
+  .daily-must .dm-row { grid-template-columns: repeat(3, 1fr); }
 }
 
 </style>
