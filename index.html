@@ -383,7 +383,7 @@ window.APP = window.APP || {};
     '408': '#93A4C1',
     '数学一': '#D3DFF2',
     '英语一': '#B1B2AE',
-    '政治': '#18202B'
+    '政治': '#5B7290'
   };
   APP.KNOWLEDGE_SUBJECTS = ['数据结构', '计算机组成原理', '操作系统', '计算机网络'];
   APP.MATH_COURSES = ['高等数学', '线性代数', '概率论'];
@@ -1475,9 +1475,9 @@ APP.views.dashboard = function (container) {
       const wn = Number(log.wordNew) || 0, wo = Number(log.wordOld) || 0;
       const md = Number(log.mathDone) || 0, cd = Number(log.csDone) || 0;
       card.appendChild(APP.el('div', { class: 'row', style: 'gap:8px;flex-wrap:wrap;margin-bottom:8px' }, [
-        subjPill('数学一', sm.math), subjPill('408', sm.cs), subjPill('英语一', sm.eng), subjPill('政治', sm.pol)
+        subjPill('数学一', sm.math), subjPill('专业课', sm.cs), subjPill('英语一', sm.eng), subjPill('政治', sm.pol)
       ]));
-      card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '单词：新 ' + wn + ' / 旧 ' + wo + '　做题：数学 ' + md + '题 · 408 ' + cd + '题' }));
+      card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '单词：新 ' + wn + ' / 旧 ' + wo + '　做题：数学 ' + md + '题 · 专业课 ' + cd + '题' }));
       card.appendChild(APP.el('div', { class: 'row', style: 'margin-top:10px' }, [
         APP.el('button', { class: 'btn primary', text: '修改打卡', onclick: () => APP._navigate('diary') })
       ]));
@@ -1496,7 +1496,7 @@ APP.views.dashboard = function (container) {
       if (Number(l.minutes) > 0 || (m.math || m.cs || m.eng || m.pol) || Number(l.wordNew) > 0 || Number(l.wordOld) > 0 || Number(l.mathDone) > 0 || Number(l.csDone) > 0) wkChecked++;
       d = U.addDays(d, 1);
     }
-    card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px', text: '本周已打卡 ' + wkChecked + ' 天' + (Number(log.minutes) > 0 ? ' · 今日 ' + Number(log.minutes) + ' 分钟' : '') }));
+    card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px', text: '本周已打卡 ' + wkChecked + ' 天' + (Number(log.minutes) > 0 ? ' · 今日 ' + Number(log.minutes) + ' min' : '') }));
     return card;
   }
   function subjPill(label, min) {
@@ -1517,10 +1517,10 @@ APP.views.dashboard = function (container) {
       ]),
       APP.el('div', { class: 'sub', text: '累计 ' + curH.toFixed(1) + 'h / 目标 ' + targetH + 'h（' + (pct > 100 ? '已超额' : pct + '%') + '）' }),
       APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + Math.min(100, pct) + '%' })]),
-      APP.el('div', { class: 'sub', style: 'margin-top:8px', text: '科目配比（目标 数学2h:408 1.5h:英语1h:政治0h）' })
+      APP.el('div', { class: 'sub', style: 'margin-top:8px', text: '科目配比（目标 数学2h:专业课 1.5h:英语1h:政治0h）' })
     ]);
     const subjTotal = wk.m.math + wk.m.cs + wk.m.eng;
-    [['数学一', wk.m.math, 2 / 4.5], ['408', wk.m.cs, 1.5 / 4.5], ['英语一', wk.m.eng, 1 / 4.5], ['政治', wk.m.pol, 0]].forEach(([label, min, tgt]) => {
+    [['数学一', wk.m.math, 2 / 4.5], ['专业课', wk.m.cs, 1.5 / 4.5], ['英语一', wk.m.eng, 1 / 4.5], ['政治', wk.m.pol, 0]].forEach(([label, min, tgt]) => {
       const a = subjTotal > 0 ? min / subjTotal : 0;
       let warn = false;
       if (tgt > 0) { if (Math.abs(a - tgt) / tgt > 0.3) warn = true; } else if (min > 0) warn = true;
@@ -1656,6 +1656,19 @@ APP.views.dashboard = function (container) {
       ]));
     }
     card.appendChild(cal);
+    // 本月累计学习时长 + 连续打卡天数（填充卡片空间，缓解右侧空旷）
+    let mMin = 0;
+    for (let d = 1; d <= curDay; d++) { const ds = monthKey + '-' + String(d).padStart(2, '0'); const l = st.studyLog[ds]; if (l) { mMin += Number(l.minutes) || 0; const sm = l.subjectMin || {}; mMin += (Number(sm.math) || 0) + (Number(sm.cs) || 0) + (Number(sm.eng) || 0) + (Number(sm.pol) || 0); } }
+    let streak = 0; let dd = today; while (studied(dd)) { streak++; dd = U.addDays(dd, -1); }
+    const mH = Math.floor(mMin / 60), mRem = mMin % 60;
+    card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:12px;font-size:12.5px' }, [
+      APP.el('span', { class: 'muted', text: '本月累计学习' }),
+      APP.el('span', { style: 'font-weight:600', text: (mH > 0 ? mH + 'h ' : '') + mRem + 'min' })
+    ]));
+    card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:4px;font-size:12.5px' }, [
+      APP.el('span', { class: 'muted', text: '连续打卡' }),
+      APP.el('span', { style: 'font-weight:600;color:var(--accent)', text: streak + ' 天' })
+    ]));
     return card;
   }
   function studied(d) {
@@ -2573,7 +2586,7 @@ APP.views.english = function (container) {
   // ---------- 概览 ----------
   function renderOverview() {
     let wordTotal = 0; for (const d in (st.studyLog || {})) wordTotal += Number(st.studyLog[d].wordNew) || 0;
-    const ov = APP.el('div', { class: 'grid grid-4' }, [
+    const ov = APP.el('div', { class: 'grid grid-4', style: 'margin-bottom:18px' }, [
       ovStat('累计单词', wordTotal + ' 个'),
       ovStat('阅读篇数', (eng.reading || []).length + ' 篇'),
       ovStat('长难句', (eng.sentences || []).length + ' 句'),
@@ -2583,7 +2596,7 @@ APP.views.english = function (container) {
 
     // 单词掌握可视化
     const vizPeriod = APP._engVizPeriod || 'week';
-    const vizCard = APP.el('div', { class: 'card' }, [
+    const vizCard = APP.el('div', { class: 'card', style: 'margin-bottom:18px' }, [
       APP.el('div', { class: 'spread', style: 'margin-bottom:10px' }, [
         APP.el('h3', { text: '单词掌握可视化', html: '' }),
         APP.el('div', { class: 'row' },
@@ -3716,11 +3729,11 @@ APP.views.diary = function (container) {
   container.appendChild(APP.el('div', { class: 'row', style: 'margin-bottom:14px' }, [APP.el('span', { class: 'muted', text: '日期' }), dp]));
 
   // ---------- inputs ----------
-  const fMath = APP.el('input', { type: 'number', value: sm.math || 0, placeholder: '分钟' });
-  const fCs = APP.el('input', { type: 'number', value: sm.cs || 0, placeholder: '分钟' });
-  const fEng = APP.el('input', { type: 'number', value: sm.eng || 0, placeholder: '分钟' });
-  const fPol = APP.el('input', { type: 'number', value: sm.pol || 0, placeholder: '分钟' });
-  const fMin = APP.el('input', { type: 'number', value: log.minutes || sumMin || 0, placeholder: '分钟（自动合计，可改）' });
+  const fMath = APP.el('input', { type: 'number', value: sm.math || 0, placeholder: 'min' });
+  const fCs = APP.el('input', { type: 'number', value: sm.cs || 0, placeholder: 'min' });
+  const fEng = APP.el('input', { type: 'number', value: sm.eng || 0, placeholder: 'min' });
+  const fPol = APP.el('input', { type: 'number', value: sm.pol || 0, placeholder: 'min' });
+  const fMin = APP.el('input', { type: 'number', value: log.minutes || sumMin || 0, placeholder: 'min（自动合计，可改）' });
   const fWordNew = APP.el('input', { type: 'number', value: log.wordNew || 0, placeholder: '新词' });
   const fWordOld = APP.el('input', { type: 'number', value: log.wordOld || 0, placeholder: '复习旧词' });
   const fMathDone = APP.el('input', { type: 'number', value: log.mathDone || 0, placeholder: '题量' });
@@ -3817,11 +3830,11 @@ APP.views.diary = function (container) {
       APP.el('h3', { text: '今日打卡 · ' + date, html: '' }),
       APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: weekType + ' · 目标' + (weekType === '大周' ? '41h' : '33h') })
     ]),
-    APP.el('div', { class: 'sub', text: '必填：各科时长（分钟）；总时长自动 = 四科之和' }),
+    APP.el('div', { class: 'sub', text: '必填：各科时长（min）；总时长自动 = 四科之和' }),
     APP.el('div', { class: 'grid grid-4', style: 'margin-top:10px' }, [
-      subjInput('数学一', fMath), subjInput('408', fCs), subjInput('英语一', fEng), subjInput('政治', fPol)
+      subjInput('数学一', fMath), subjInput('专业课', fCs), subjInput('英语一', fEng), subjInput('政治', fPol)
     ]),
-    APP.field('今日总时长（分钟，可手动覆盖）', fMin),
+    APP.field('今日总时长（min，可手动覆盖）', fMin),
     APP.el('div', { class: 'hr' }),
     APP.el('div', { class: 'sub', text: '单词（新 : 旧 ≈ 1 : 3）' }),
     APP.el('div', { class: 'muted', style: 'font-size:12px;color:var(--accent);margin-bottom:6px', text: '今日目标新词 ' + (APP.wordTarget ? APP.wordTarget(date) : '—') + ' 个' }),
@@ -3830,12 +3843,11 @@ APP.views.diary = function (container) {
     APP.el('div', { class: 'sub', text: '做题（题量 / 错数）' }),
     APP.el('div', { class: 'grid grid-2', style: 'margin-top:8px' }, [
       APP.el('div', { class: 'grid grid-2', style: 'gap:8px' }, [APP.field('数学题量', fMathDone), APP.field('数学错数', fMathWrong)]),
-      APP.el('div', { class: 'grid grid-2', style: 'gap:8px' }, [APP.field('408题量', fCsDone), APP.field('408错数', fCsWrong)])
+      APP.el('div', { class: 'grid grid-2', style: 'gap:8px' }, [APP.field('专业课题量', fCsDone), APP.field('专业课错数', fCsWrong)])
     ]),
     APP.el('div', { class: 'hr' }),
     APP.el('div', { class: 'sub', text: '大小周标记（默认按本周推算）' }),
     APP.el('div', { style: 'margin-top:8px' }, wtChips),
-    APP.field('一句话状态', fNote),
     APP.el('details', {}, [
       APP.el('summary', { style: 'cursor:pointer;color:var(--accent);font-size:13px;margin:10px 0', text: '选填 · 精力自评 / 明日第一件事' }),
       APP.el('div', { class: 'sub', text: '精力自评（1-5 分，点方块）' }),
@@ -3912,7 +3924,7 @@ APP.views.diary = function (container) {
     const subjTotal = ae.math + ae.cs + ae.eng;
     const shareOf = (m) => subjTotal > 0 ? m / subjTotal : 0;
     const targets = { math: 2 / 4.5, cs: 1.5 / 4.5, eng: 1 / 4.5 };
-    const labelMap = { math: '数学一', cs: '408', eng: '英语一', pol: '政治' };
+    const labelMap = { math: '数学一', cs: '专业课', eng: '英语一', pol: '政治' };
     const imbalance = [];
     ['math', 'cs', 'eng'].forEach(k => {
       const t = targets[k], a = shareOf(ae[k]);
@@ -3925,7 +3937,7 @@ APP.views.diary = function (container) {
     const content = `统计区间：${ws} ~ ${date}
 出勤：${X}天 / 已打卡${Y}天（出勤率${rate}%）
 本周总时长：${(ae.totalMin / 60).toFixed(1)}h / 目标 ${target}h（${wt}）
-各科时长：数学${ae.math}分 · 408 ${ae.cs}分 · 英语${ae.eng}分 · 政治${ae.pol}分
+各科时长：数学${ae.math}min · 专业课 ${ae.cs}min · 英语${ae.eng}min · 政治${ae.pol}min
 ${imbalance.length ? '⚠ 失衡科目：' + imbalance.join('、') : '科目配比健康 ✓'}
 单词：新词${ae.wordNew}个 · 旧词复习${ae.wordOld}个
 做题：数学${ae.mathDone}题错${ae.mathWrong}（正确率${mathAcc}%）· 408 ${ae.csDone}题错${ae.csWrong}（正确率${csAcc}%）
@@ -4750,7 +4762,7 @@ APP.views.analytics = function (container) {
     card.appendChild(svg);
     card.appendChild(APP.el('div', { class: 'row', style: 'gap:14px;margin-top:6px' }, [
       APP.el('div', { class: 'row', style: 'gap:6px;align-items:center' }, [APP.el('span', { style: 'width:12px;height:3px;background:#18202B;display:inline-block' }), APP.el('span', { class: 'muted', style: 'font-size:12px', text: '数学一' })]),
-      APP.el('div', { class: 'row', style: 'gap:6px;align-items:center' }, [APP.el('span', { style: 'width:12px;height:3px;background:#93A4C1;display:inline-block' }), APP.el('span', { class: 'muted', style: 'font-size:12px', text: '408' })])
+      APP.el('div', { class: 'row', style: 'gap:6px;align-items:center' }, [APP.el('span', { style: 'width:12px;height:3px;background:#93A4C1;display:inline-block' }), APP.el('span', { class: 'muted', style: 'font-size:12px', text: '专业课' })])
     ]));
     return card;
   }
@@ -5114,7 +5126,7 @@ window.APP = window.APP || {};
   const NAV = [
     { key: 'dashboard', label: '首页', ico: '▦' },
     { key: 'plan', label: '总计划', ico: '▤' },
-    { key: 'knowledge', label: '408', ico: '◈' },
+    { key: 'knowledge', label: '专业课', ico: '◈' },
     { key: 'math', label: '数学', ico: '∑' },
     { key: 'english', label: '英语', ico: 'A' },
     { key: 'politics', label: '政治', ico: '⚑' },
