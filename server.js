@@ -137,7 +137,13 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end('index.html not found');
       }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      });
       res.end(data);
     });
     return;

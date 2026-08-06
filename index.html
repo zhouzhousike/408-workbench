@@ -3,7 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>2028考研11408备考工作台</title>
+  <script>
+  // 强制桌面端默认展开侧边栏，避免旧缓存/旧 localStorage 导致折叠
+  document.addEventListener('DOMContentLoaded', function () {
+    try {
+      var app = document.getElementById('app');
+      if (app) app.classList.remove('nav-collapsed');
+      localStorage.setItem('yutian_sidebar_collapsed', '0');
+    } catch (e) {}
+  });
+  </script>
   <!-- auto-deploy-token: push enabled -->
   <style>
 :root {
