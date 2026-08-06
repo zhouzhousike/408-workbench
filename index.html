@@ -61,10 +61,10 @@ button { font-family: inherit; cursor: pointer; }
 .side-brand:hover { opacity: .85; }
 .side-brand .brand-ico {
   width: 28px; height: 28px; border-radius: 7px;
-  background: linear-gradient(135deg, #2563EB, #1E40AF);
+  background: linear-gradient(135deg, #7C92B4, #5B7290);
   color: #fff; display: grid; place-items: center;
   font-size: 13px; font-weight: 700; flex: 0 0 28px;
-  box-shadow: 0 2px 6px rgba(37,99,235,.25);
+  box-shadow: 0 2px 6px rgba(91,114,144,.22);
 }
 .side-brand b { font-size: 15px; letter-spacing: .3px; }
 .side-toggle { display: none; }
@@ -289,9 +289,9 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 .dash-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; }
 
 /* 学习出勤 · 本月日历式打卡 */
-.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 4px; }
-.mh-hdr { font-size: 10px; color: var(--muted); text-align: center; font-weight: 600; margin-bottom: 2px; }
-.mh-cell { position: relative; aspect-ratio: 1 / 1; min-height: 22px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 10px; color: var(--muted); }
+.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 4px; }
+.mh-hdr { font-size: 9px; color: var(--muted); text-align: center; font-weight: 600; margin-bottom: 1px; }
+.mh-cell { position: relative; aspect-ratio: 1 / 1; min-height: 17px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 9px; color: var(--muted); }
 .mh-cell.empty { background: transparent; border: none; }
 .mh-cell.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .mh-cell.future { opacity: .35; cursor: default; }
@@ -1449,10 +1449,12 @@ APP.views.dashboard = function (container) {
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [buildCheckinCard(), buildWeekGoalCard()]));
   // 英语速览放在今日打卡板块下方
   stack.appendChild(buildEnglishCard());
-  // 四科总体状态 |（学习出勤 + 每周习惯打卡）
-  stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [subjCard, APP.el('div', {}, [heatCard, buildHabitCard()])]));
+  // 左栏大块：四科总体状态 + 各科掌握情况；右栏：学习出勤 + 每周习惯打卡
+  stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [
+    APP.el('div', {}, [subjCard, summaryCard]),
+    APP.el('div', {}, [heatCard, buildHabitCard()])
+  ]));
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [taskCard, revCard]));
-  stack.appendChild(summaryCard);
   stack.appendChild(buildMonthlyTasksCard());
   container.appendChild(stack);
 
@@ -1832,21 +1834,24 @@ APP.views.dashboard = function (container) {
       }
     }
     // 408：按 DS→计组→OS→计网 顺序，只推荐当前正在学的第一个未掌握科目
+    // chapNo：将“第1章 绪论”与“第1章”归一为“第1章”，修复知识点章节名与大纲不一致导致的匹配失败/误推荐
+    const chapNo = (s) => { const m = String(s || '').match(/第\s*\d+\s*章/); return m ? m[0].replace(/\s+/g, '') : s; };
     const subjOrder = ['数据结构', '计算机组成原理', '操作系统', '计算机网络'];
     for (const subj of subjOrder) {
       const chs = APP.KNOWLEDGE_CHAPTERS[subj] || [];
       const pts = st.knowledge[subj] || [];
       let pushed = false;
       for (const ch of chs) {
-        const chPts = pts.filter(p => p.chapter === ch);
+        const no = chapNo(ch);
+        const chPts = pts.filter(p => chapNo(p.chapter) === no);
         if (!chPts.length) {
-          recs.push({ subject: '408', text: subj + ' · ' + ch + '（待补充知识点）· 跟宇天Q' });
+          recs.push({ subject: '408', text: subj + ' · ' + ch + '（待补充知识点）' });
           pushed = true; break;
         }
         const avg = chPts.reduce((s, p) => s + (p.mastery || 0), 0) / chPts.length;
         if (avg < 3) {
           const unstarted = chPts.filter(p => (p.mastery || 0) === 0).length;
-          recs.push({ subject: '408', text: subj + ' · ' + ch + (unstarted ? '（' + unstarted + ' 个知识点未学）' : '（掌握偏弱）') + ' · 跟宇天Q' });
+          recs.push({ subject: '408', text: subj + ' · ' + ch + (unstarted ? '（' + unstarted + ' 个知识点未学）' : '（掌握偏弱）') });
           pushed = true; break;
         }
       }
@@ -1901,7 +1906,7 @@ APP.views.dashboard = function (container) {
         let wnTotal = 0; for (const d in st.studyLog) wnTotal += Number(st.studyLog[d].wordNew) || 0;
         const vocabPct = Math.min(100, Math.round(wnTotal / 1800 * 100));
         const dueW = dueWordReviews().length;
-        const eColor = vocabPct >= 80 ? '#1E40AF' : vocabPct >= 50 ? '#93A4C1' : 'var(--danger)';
+        const eColor = vocabPct >= 80 ? '#5B7290' : vocabPct >= 50 ? '#93A4C1' : 'var(--danger)';
         card.appendChild(APP.el('div', { style: 'margin-bottom:10px' }, [
           APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [
             APP.subjectTag(b),
@@ -1916,7 +1921,7 @@ APP.views.dashboard = function (container) {
       const correct = rec.reduce((s, r) => s + (Number(r.correct) || 0), 0);
       const wrong = total - correct;
       const acc = total > 0 ? Math.round(correct / total * 100) : 0;
-      const color = acc >= 80 ? '#1E40AF' : acc >= 60 ? '#93A4C1' : 'var(--danger)';
+      const color = acc >= 80 ? '#5B7290' : acc >= 60 ? '#93A4C1' : 'var(--danger)';
       const weakChaps = total > 0 ? APP.chapterAccuracy(rec).filter(x => x.accuracy < 60 && x.total >= 5) : [];
       card.appendChild(APP.el('div', { style: 'margin-bottom:10px' }, [
         APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [
