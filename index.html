@@ -2631,11 +2631,16 @@ APP.views.english = function (container) {
 
   // 单词可视化：柱状图（每日新词）+ 折线图（默写正确率）+ 环形图（累计正确率）
   function buildWordViz(period) {
-    const days = period === 'week' ? 7 : period === 'month' ? 30 : 365;
+    const [ty, tm, td] = today.split('-').map(Number);
+    const _dow = (y, m, d) => (new Date(y, m - 1, d).getDay() + 6) % 7; // 周一 = 0
+    const _range = (s, e) => { const o = []; let d = s; while (d <= e) { o.push(d); d = U.addDays(d, 1); } return o; };
+    let dateList;
+    if (period === 'week') { const mon = U.addDays(today, -_dow(ty, tm, td)); dateList = _range(mon, U.addDays(mon, 6)); } // 本周一 ~ 本周日
+    else if (period === 'month') { const first = ty + '-' + String(tm).padStart(2, '0') + '-01'; const lastDay = new Date(ty, tm, 0).getDate(); const last = ty + '-' + String(tm).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0'); dateList = _range(first, last); } // 本月 1 号 ~ 月末
+    else { dateList = _range('2026-08-03', today); } // 全部：从实际学习起点 8/3 起
     const dates = []; const newWords = []; const accuracies = [];
     let totalRecs = 0, totalCorrect = 0, totalWords = 0;
-    for (let i = days - 1; i >= 0; i--) {
-      const d = U.addDays(today, -i);
+    dateList.forEach(d => {
       dates.push(d.slice(5));
       newWords.push(Number(st.studyLog[d]?.wordNew) || 0);
       const rec = (eng.wordRecords || {})[d];
@@ -2648,7 +2653,7 @@ APP.views.english = function (container) {
       } else {
         accuracies.push(null);
       }
-    }
+    });
     const overallAcc = totalWords > 0 ? Math.round(totalCorrect / totalWords * 100) : 0;
 
     const W = 640, H = 220, padL = 36, padR = 16, padT = 16, padB = 28;
