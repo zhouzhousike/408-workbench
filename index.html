@@ -2356,7 +2356,9 @@ APP.views.math = function (container) {
       });
       if (!(ch.outline || []).length) ol.appendChild(APP.el('div', { class: 'empty', text: '暂无课程目录' }));
       ol.appendChild(APP.el('div', { style: 'margin-top:6px' }, [
-        APP.el('button', { class: 'btn sm primary', text: '编辑章节', onclick: (e) => { e.stopPropagation(); editChapter(ch); } })
+        APP.el('button', { class: 'btn sm primary', text: '管理本章节', onclick: (e) => { e.stopPropagation(); APP._mathKbChapter = ch.chapter; APP.refresh(); } }),
+        ' ',
+        APP.el('button', { class: 'btn sm', text: '编辑进度', onclick: (e) => { e.stopPropagation(); editChapter(ch); } })
       ]));
       card.appendChild(ol);
     }
@@ -2429,7 +2431,7 @@ APP.views.math = function (container) {
       APP.store.save(); APP.closeModal(); APP.refresh(); APP.toast('已清除：' + ch.chapter);
     } });
 
-    APP.openModal('编辑章节 · ' + ch.chapter, body, [
+    APP.openModal('编辑章节进度 · ' + ch.chapter, body, [
       APP.el('button', { class: 'btn', text: '取消', onclick: APP.closeModal }),
       clearBtn,
       APP.el('button', { class: 'btn primary', text: '保存', onclick: () => {
@@ -2746,7 +2748,7 @@ APP.views.english = function (container) {
     const log = st.studyLog[today] || {};
     const wn = Number(log.wordNew) || 0;
     const wo = Number(log.wordOld) || 0;
-    const target = APP.wordTarget(today);
+    const target = (APP.wordTarget ? APP.wordTarget(today) : 50);
     const todayCard = APP.el('div', { class: 'card' }, [
       APP.el('h3', { text: '今日数据', html: '' }),
       APP.el('div', { class: 'spread', style: 'margin-bottom:6px' }, [
@@ -2817,43 +2819,64 @@ APP.views.english = function (container) {
 
     // 4.5 单词默写复盘总览（聚合所有日期的默写记录）
     const allRecs = Object.values((eng.wordRecords) || {}).filter(r => r && (Number(r.total) || 0) > 0);
+    const passOf = (r) => r.pass || ((Number(r.reviewCount) || 0) === 0 ? '一刷' : '二刷');
+    const passOrder = ['一刷', '二刷', '三刷', '四刷', '五刷', '六刷'];
     const sumWords = allRecs.reduce((s, r) => s + (Number(r.total) || 0), 0);
-    const firstPass = allRecs.filter(r => (Number(r.reviewCount) || 0) === 0);
-    const secondPass = allRecs.filter(r => (Number(r.reviewCount) || 0) >= 1);
-    const accOf = (arr) => {
-      const tot = arr.reduce((s, r) => s + (Number(r.total) || 0), 0);
-      const err = arr.reduce((s, r) => s + (r.spellingErrors || []).length + (r.meaningErrors || []).length, 0);
-      return tot > 0 ? Math.round((tot - err) / tot * 100) : null;
-    };
-    const acc1 = accOf(firstPass), acc2 = accOf(secondPass);
+    const recAcc = (r) => { const tot = Number(r.total) || 0; const err = (r.spellingErrors || []).length + (r.meaningErrors || []).length; return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
+    const groupAcc = (arr) => { const tot = arr.reduce((s, r) => s + (Number(r.total) || 0), 0); const err = arr.reduce((s, r) => s + (r.spellingErrors || []).length + (r.meaningErrors || []).length, 0); return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
+    const passes = passOrder.filter(p => allRecs.some(r => passOf(r) === p));
     const reviewCard = APP.el('div', { class: 'card', style: 'margin-top:14px' }, [
       APP.el('div', { class: 'spread' }, [
         APP.el('h3', { text: '单词默写复盘', html: '' }),
         APP.el('span', { class: 'muted', style: 'font-size:12px', text: allRecs.length + ' 次默写记录' })
       ])
     ]);
-    reviewCard.appendChild(APP.el('div', { class: 'grid grid-3', style: 'margin-top:6px' }, [
-      estStat('累计刷词量', sumWords + ' 词'),
-      estStat('一刷正确率', acc1 != null ? acc1 + '%' : '—'),
-      estStat('二刷正确率', acc2 != null ? acc2 + '%' : '—')
-    ]));
     if (sumWords > 0) {
-      reviewCard.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:10px;font-size:12.5px;color:var(--text-2)' }, [
-        APP.el('span', { text: '一刷 ' + firstPass.length + ' 次 · 二刷 ' + secondPass.length + ' 次' }),
-        APP.el('span', { class: 'pill', style: 'background:var(--surface-2);color:var(--text-2)', text: '总体正确率 ' + accOf(allRecs) + '%' })
+      const statCells = passes.map(p => estStat(p + '正确率', (() => { const a = groupAcc(allRecs.filter(r => passOf(r) === p)); return a != null ? a + '%' : '—'; })()));
+      reviewCard.appendChild(APP.el('div', { class: 'grid grid-3', style: 'margin-top:6px' }, [
+        estStat('累计刷词量', sumWords + ' 词'),
+        ...statCells
       ]));
+      reviewCard.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:10px;font-size:12.5px;color:var(--text-2)' }, [
+        APP.el('span', { text: passes.map(p => p + ' ' + allRecs.filter(r => passOf(r) === p).length + ' 次').join(' · ') }),
+        APP.el('span', { class: 'pill', style: 'background:var(--surface-2);color:var(--text-2)', text: '总体正确率 ' + groupAcc(allRecs) + '%' })
+      ]));
+    }
+    // 错误词汇总（首次写 + 每次复盘的错误汇总，标注所在轮次）
+    if (sumWords > 0) {
+      const spellMap = {}; // word -> Set(passes)
+      const meanMap = {};  // word -> { m:Set(meanings), p:Set(passes) }
+      allRecs.forEach(r => {
+        const p = passOf(r);
+        (r.spellingErrors || []).forEach(w => { (spellMap[w] = spellMap[w] || new Set()).add(p); });
+        (r.meaningErrors || []).forEach(m => { const e = meanMap[m.word] = meanMap[m.word] || { m: new Set(), p: new Set() }; e.m.add(m.meaning); e.p.add(p); });
+      });
+      const spellWords = Object.keys(spellMap), meanWords = Object.keys(meanMap);
+      const errBox = APP.el('div', { style: 'margin-top:12px;padding:12px;background:var(--surface-2);border-radius:10px' }, [
+        APP.el('div', { style: 'font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-2)', text: '错误词汇总（拼写 ' + spellWords.length + ' 词 · 释义 ' + meanWords.length + ' 词）' })
+      ]);
+      if (!spellWords.length && !meanWords.length) errBox.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '暂无错误词，继续保持！' }));
+      if (spellWords.length) errBox.appendChild(APP.el('div', { style: 'font-size:12.5px;margin-bottom:8px;line-height:1.6' }, [
+        APP.el('b', { text: '拼写错词：' }),
+        APP.el('span', { class: 'muted', text: spellWords.map(w => w + '（' + [...spellMap[w]].join('/') + '）').join('、') })
+      ]));
+      if (meanWords.length) errBox.appendChild(APP.el('div', { style: 'font-size:12.5px;line-height:1.6' }, [
+        APP.el('b', { text: '释义错词：' }),
+        ...meanWords.map(w => APP.el('div', { style: 'margin-left:8px;margin-top:2px', text: w + '：' + [...meanMap[w].m].join('/') + '（' + [...meanMap[w].p].join('/') + '）' }))
+      ]));
+      reviewCard.appendChild(errBox);
     }
     if (allRecs.length) {
       const maxW = Math.max.apply(null, allRecs.map(r => Number(r.total) || 0));
       const rows = allRecs.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(r => {
         const tot = Number(r.total) || 0;
         const err = (r.spellingErrors || []).length + (r.meaningErrors || []).length;
-        const acc = tot > 0 ? Math.round((tot - err) / tot * 100) : 0;
+        const acc = recAcc(r);
         const w = maxW > 0 ? Math.round(tot / maxW * 100) : 0;
         const color = acc >= 85 ? 'var(--accent)' : acc >= 65 ? '#B1B2AE' : 'var(--danger)';
         return APP.el('div', { style: 'margin-top:8px' }, [
           APP.el('div', { class: 'spread', style: 'font-size:12px' }, [
-            APP.el('span', { text: (r.listName || r.date || '默写') + ' · ' + (r.date || '') }),
+            APP.el('span', { text: passOf(r) + ' · ' + (r.listName || r.date || '默写') + ' · ' + (r.date || '') }),
             APP.el('span', { class: 'muted', text: acc + '% · ' + tot + ' 词' })
           ]),
           APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + w + '%;background:' + color })])
@@ -2897,12 +2920,15 @@ APP.views.english = function (container) {
     }
     function editRec() {
       const rec = (eng.wordRecords || {})[today] || { total: 0, spellingErrors: [], meaningErrors: [], suggestions: '' };
+      const defPass = rec.pass || ((Number(rec.reviewCount) || 0) === 0 ? '一刷' : '二刷');
       const fTotal = APP.el('input', { type: 'number', value: rec.total || 0, placeholder: '总词数' });
+      const fPass = APP.el('select', {}, ['一刷', '二刷', '三刷', '四刷', '五刷', '六刷'].map(p => APP.el('option', { value: p, selected: p === defPass ? 'selected' : false, text: p })));
       const fSpell = APP.el('textarea', { value: (rec.spellingErrors || []).join('、'), placeholder: '拼写错误词，用顿号/逗号/换行分隔', style: 'min-height:50px' });
       const fMean = APP.el('textarea', { value: (rec.meaningErrors || []).map(m => m.word + '：' + m.meaning).join('\n'), placeholder: '释义错误，每行格式：单词：正确释义', style: 'min-height:80px' });
       const fSug = APP.el('textarea', { value: rec.suggestions || '', placeholder: '复习建议', style: 'min-height:60px' });
       APP.openModal('录入默写掌握情况 · ' + today, APP.el('div', {}, [
         APP.field('总词数', fTotal),
+        APP.field('轮次（首次写=一刷，复盘=二刷…）', fPass),
         APP.field('拼写错误词（顿号/逗号/换行分隔）', fSpell),
         APP.field('释义错误（每行：单词：释义）', fMean),
         APP.field('复习建议', fSug)
@@ -2922,6 +2948,7 @@ APP.views.english = function (container) {
             date: today, total,
             spellingErrors: spelling, meaningErrors: meaning, suggestions: fSug.value.trim(),
             reviewCount: rec.reviewCount || 0,
+            pass: fPass.value,
             nextReview: rec.nextReview || U.addDays(today, 3),
             listName
           };
@@ -4019,7 +4046,7 @@ ${ae.probs.join('\n') || '（无）'}
     const ae = aggregate(start, date);
     const content = `统计月份：${mk}
 学习天数：${ae.checkedDays} 天
-累计时长：${ae.totalMin} 分钟（约 ${(ae.totalMin / 60).toFixed(1)} 小时）
+累计时长：${ae.totalMin} min（约 ${(ae.totalMin / 60).toFixed(1)} 小时）
 单词：新词${ae.wordNew}个 · 旧词复习${ae.wordOld}个
 做题：数学${ae.mathDone}题错${ae.mathWrong} · 408 ${ae.csDone}题错${ae.csWrong}
 本月收获：
@@ -4104,14 +4131,31 @@ APP.views.review = function (container) {
   container.appendChild(APP.el('div', { class: 'card' }, [
     APP.el('div', { class: 'spread' }, [APP.el('h3', { text: '本周复盘 (' + ws + ' ~ ' + ref + ')', html: '' }), APP.el('button', { class: 'btn sm primary', text: '生成周报告', onclick: () => gen('weekly') })]),
     metricRow([
-      ['学习时长', wk.totalMin + ' 分 / ' + (wk.totalMin / 60).toFixed(1) + ' h'],
+      ['学习时长', wk.totalMin + ' min / ' + (wk.totalMin / 60).toFixed(1) + ' h'],
       ['学习天数', wk.days + ' 天'],
-      ['任务完成', wkDone.done + '/' + wkDone.total + ' (' + (wkDone.total ? Math.round(wkDone.done / wkDone.total * 100) : 0) + '%)'],
+      ['本周任务', wkDone.done + '/' + wkDone.total + ' (' + (wkDone.total ? Math.round(wkDone.done / wkDone.total * 100) : 0) + '%)'],
       ['错题总量', wq.length + ' 道']
     ])
   ]));
 
-  // 薄弱知识点（统一：仅按刷题正确率 / 错题库生成，不凭空罗列）
+  // monthly window（合并原「学习时长统计」板块）
+  const mo = aggregate(ms, ref);
+  const moDone = weekTasks(ms, ref);
+  container.appendChild(APP.el('div', { class: 'card' }, [
+    APP.el('div', { class: 'spread' }, [APP.el('h3', { text: '本月复盘 (' + mk + ')', html: '' }), APP.el('button', { class: 'btn sm primary', text: '生成月报告', onclick: () => gen('monthly') })]),
+    APP.el('div', { class: 'sec-title', style: 'margin:4px 0 6px', text: '学习时长统计（截至 ' + ref + '）' }),
+    APP.el('div', { class: 'grid grid-5' }, [
+      timeStat('今日', dayA), timeStat('本周', wkA), timeStat('本月', moA), timeStat('本季度', qA), timeStat('本年', yA)
+    ]),
+    APP.el('button', { class: 'btn sm danger', style: 'margin:10px 0', text: '清零学习日志', onclick: () => { if (confirm('确定清空所有学习日志数据？此操作不可撤销。')) { st.studyLog = {}; APP.store.save(); APP.toast('已清零'); APP.refresh(); } } }),
+    metricRow([
+      ['学习天数', mo.days + ' 天'],
+      ['本月任务', moDone.done + '/' + moDone.total + ' (' + (moDone.total ? Math.round(moDone.done / moDone.total * 100) : 0) + '%)'],
+      ['待复习错题', wq.filter(q => q.nextReview && q.nextReview <= ref && q.mastery < 5).length + ' 道']
+    ])
+  ]));
+
+  // 薄弱知识点（统一：仅按刷题正确率 / 错题库生成，不凭空罗列）—— 置于本月复盘下方
   const pw = practiceWeakPoints(st);
   const pwCard = APP.el('div', { class: 'card' }, [
     APP.el('div', { class: 'spread' }, [
@@ -4131,23 +4175,6 @@ APP.views.review = function (container) {
     } })
   ])));
   container.appendChild(pwCard);
-
-  // monthly window（合并原「学习时长统计」板块）
-  const mo = aggregate(ms, ref);
-  const moDone = weekTasks(ms, ref);
-  container.appendChild(APP.el('div', { class: 'card' }, [
-    APP.el('div', { class: 'spread' }, [APP.el('h3', { text: '本月复盘 (' + mk + ')', html: '' }), APP.el('button', { class: 'btn sm primary', text: '生成月报告', onclick: () => gen('monthly') })]),
-    APP.el('div', { class: 'sec-title', style: 'margin:4px 0 6px', text: '学习时长统计（截至 ' + ref + '）' }),
-    APP.el('div', { class: 'grid grid-5' }, [
-      timeStat('今日', dayA), timeStat('本周', wkA), timeStat('本月', moA), timeStat('本季度', qA), timeStat('本年', yA)
-    ]),
-    APP.el('button', { class: 'btn sm danger', style: 'margin:10px 0', text: '清零学习日志', onclick: () => { if (confirm('确定清空所有学习日志数据？此操作不可撤销。')) { st.studyLog = {}; APP.store.save(); APP.toast('已清零'); APP.refresh(); } } }),
-    metricRow([
-      ['学习天数', mo.days + ' 天'],
-      ['任务完成', moDone.done + '/' + moDone.total + ' (' + (moDone.total ? Math.round(moDone.done / moDone.total * 100) : 0) + '%)'],
-      ['待复习错题', wq.filter(q => q.nextReview && q.nextReview <= ref && q.mastery < 5).length + ' 道']
-    ])
-  ]));
 
   // reports list
   if (st.reviewReports.weekly.length) {
@@ -4218,10 +4245,10 @@ APP.views.review = function (container) {
 生成日期：${U.todayStr()}
 
 一、学习时间
-累计 ${ae.totalMin} 分钟（约 ${(ae.totalMin / 60).toFixed(1)} 小时），学习 ${ae.days} 天。
+累计 ${ae.totalMin} min（约 ${(ae.totalMin / 60).toFixed(1)} 小时），学习 ${ae.days} 天。
 
 二、完成情况
-任务完成 ${td.done}/${td.total}（${td.total ? Math.round(td.done / td.total * 100) : 0}%）。
+${type === 'weekly' ? '本周任务' : '本月任务'} ${td.done}/${td.total}（${td.total ? Math.round(td.done / td.total * 100) : 0}%）。
 
 三、薄弱知识点（掌握 ≤ 2）
 ${weakTxt}
@@ -4462,7 +4489,7 @@ APP.views.politics = function (container) {
   // progress card
   const p = pol.progress[sub] || 0;
   const pCard = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '学习进度 · ' + sub, html: '' })]);
-  const bar = APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + p + '%' })]);
+  const bar = APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + p + '%;background:#5B7290' })]);
   const fP = APP.el('input', { type: 'range', min: '0', max: '100', step: '5', value: String(p), style: 'width:100%' });
   fP.addEventListener('input', () => { pol.progress[sub] = Number(fP.value); bar.firstChild.style.width = fP.value + '%'; lbl.textContent = fP.value + '%'; APP.store.save(); });
   const lbl = APP.el('span', { class: 'muted', text: p + '%' });
@@ -4584,38 +4611,18 @@ APP.views.analytics = function (container) {
     days.push({ d, min });
     if (min > maxMin) maxMin = min;
   });
-  const trend = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '学习时长趋势（' + periodLabel[daPeriod] + '，分钟/天）' })]);
+  const trend = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '学习时长趋势（' + periodLabel[daPeriod] + '，min/天）' })]);
   const totalMin = days.reduce((s, x) => s + x.min, 0);
   trend.appendChild(APP.el('div', { class: 'row', style: 'margin-bottom:12px' }, [
-    APP.el('div', {}, [APP.el('div', { class: 'value', style: 'font-size:22px;font-weight:700', text: totalMin + ' 分' }), APP.el('div', { class: 'muted', style: 'font-size:12px', text: periodLabel[daPeriod] + '累计 · ' + (totalMin / 60).toFixed(1) + ' h' })])
+    APP.el('div', {}, [APP.el('div', { class: 'value', style: 'font-size:22px;font-weight:700', text: totalMin + ' min' }), APP.el('div', { class: 'muted', style: 'font-size:12px', text: periodLabel[daPeriod] + '累计 · ' + (totalMin / 60).toFixed(1) + ' h' })])
   ]));
   const bars = APP.el('div', { style: 'display:flex;align-items:flex-end;gap:3px;height:120px;overflow-x:auto' });
   days.forEach(x => {
     const h = maxMin ? Math.max(3, Math.round(x.min / maxMin * 110)) : 3;
-    bars.appendChild(APP.el('div', { title: x.d + ' · ' + x.min + ' 分', style: 'flex:0 0 9px;height:' + h + 'px;background:' + (x.min > 0 ? 'var(--accent)' : 'var(--surface-2)') + ';border-radius:3px 3px 0 0' }));
+    bars.appendChild(APP.el('div', { title: x.d + ' · ' + x.min + ' min', style: 'flex:0 0 9px;height:' + h + 'px;background:' + (x.min > 0 ? 'var(--accent)' : 'var(--surface-2)') + ';border-radius:3px 3px 0 0' }));
   });
   trend.appendChild(bars);
   container.appendChild(trend);
-
-  // ---------- 板块投入占比 ----------
-  const boardMin = {};
-  APP.BOARDS.forEach(b => boardMin[b] = 0);
-  let attrTotal = 0;
-  Object.keys(st.todayTasks || {}).forEach(d => {
-    (st.todayTasks[d] || []).forEach(t => {
-      if (boardMin[t.subject] !== undefined) { boardMin[t.subject] += Number(t.spent) || 0; attrTotal += Number(t.spent) || 0; }
-    });
-  });
-  const inv = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '板块投入占比（番茄钟计入任务的时长）' })]);
-  if (attrTotal === 0) inv.appendChild(APP.el('div', { class: 'empty', text: '暂无计时归因数据，用番茄钟计入任务后这里会显示' }));
-  else APP.BOARDS.forEach(b => {
-    const pct = Math.round(boardMin[b] / attrTotal * 100);
-    inv.appendChild(APP.el('div', { style: 'margin-bottom:10px' }, [
-      APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [APP.subjectTag(b), APP.el('span', { class: 'muted', style: 'font-size:12px', text: boardMin[b] + ' 分 · ' + pct + '%' })]),
-      APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + pct + '%' })])
-    ]));
-  });
-  container.appendChild(inv);
 
   // ---------- 408 掌握度 ----------
   const mast = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '408 各科掌握度（知识点平均掌握 0-5）' })]);
@@ -4628,6 +4635,37 @@ APP.views.analytics = function (container) {
     ]));
   });
   container.appendChild(mast);
+
+  // 通用掌握度卡片（0-5 量表）
+  function masteryCard(title, items) {
+    const c = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: title })]);
+    if (!items.length) { c.appendChild(APP.el('div', { class: 'empty', text: '暂无数据，去对应科目录入掌握度 / 进度后显示' })); return c; }
+    items.forEach(it => {
+      c.appendChild(APP.el('div', { style: 'margin-bottom:10px' }, [
+        APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [APP.el('span', { style: 'font-size:13px;font-weight:600', text: it.name }), APP.el('span', { class: 'muted', style: 'font-size:12px', text: it.score + ' / 5 · ' + it.count + ' 项' })]),
+        APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + (it.score / 5 * 100) + '%' })])
+      ]));
+    });
+    return c;
+  }
+
+  // 数学各科掌握度（按课程聚合知识点平均掌握 0-5）
+  const mathItems = APP.MATH_COURSES.map(course => {
+    const pts = (st.mathKnowledge && st.mathKnowledge[course]) || [];
+    const avg = pts.length ? Math.round(pts.reduce((s, p) => s + (Number(p.mastery) || 0), 0) / pts.length * 10) / 10 : 0;
+    return { name: course, score: avg, count: pts.length };
+  });
+  container.appendChild(masteryCard('数学各科掌握度（知识点平均掌握 0-5）', mathItems));
+
+  // 英语掌握度（能力六维 0-5，在「英语 → 能力」录入）
+  const engAbility = (st.english && st.english.ability) || {};
+  const engItems = Object.keys(engAbility).map(k => ({ name: k, score: Number(engAbility[k]) || 0, count: 1 }));
+  container.appendChild(masteryCard('英语掌握度（能力六维 0-5）', engItems));
+
+  // 政治掌握度（按科目进度 0-100 → 0-5）
+  const polProg = (st.politics && st.politics.progress) || {};
+  const polItems = Object.keys(polProg).map(k => ({ name: k, score: Math.round((Number(polProg[k]) || 0) / 20 * 10) / 10, count: 1 }));
+  container.appendChild(masteryCard('政治掌握度（各科进度 0-100 → 0-5）', polItems));
 
   // ---------- 错题分布 ----------
   const wq = st.wrongQuestions || [];
@@ -4702,14 +4740,27 @@ APP.views.analytics = function (container) {
     }).length;
   }
 
-  // 1) 各科周时长堆叠柱状图（近8周）
+  // 1) 各科周时长堆叠柱状图（按时间范围：本周/本月/全部）
   function weeklyStackedBar() {
-    const card = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '各科周时长堆叠（近 8 周，小时/周）' })]);
+    const titleMap = { week: '本周各科时长（小时）', month: '本月各学科周时长（小时/周）', all: '全部各学科周时长（小时/周）' };
+    const card = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: titleMap[daPeriod] || '各科周时长堆叠' })]);
     const subs = ['数学一', '408', '英语一', '政治'];
     const smKeys = { '数学一': 'math', '408': 'cs', '英语一': 'eng', '政治': 'pol' };
     const curMon = mondayOf(parseD(today));
-    const weeks = [];
-    for (let i = 7; i >= 0; i--) { const m = new Date(curMon); m.setDate(m.getDate() - i * 7); weeks.push(m); }
+    let weeks = [];
+    if (daPeriod === 'week') {
+      weeks = [curMon]; // 仅本周
+    } else if (daPeriod === 'month') {
+      const y = today.slice(0, 4), mo = today.slice(5, 7);
+      const firstD = parseD(y + '-' + mo + '-01');
+      const lastD = parseD(y + '-' + mo + '-' + new Date(Number(y), Number(mo), 0).getDate());
+      let d = mondayOf(firstD);
+      while (d <= lastD) { weeks.push(new Date(d)); d.setDate(d.getDate() + 7); }
+    } else {
+      let d = mondayOf(parseD('2026-08-03'));
+      const end = parseD(today);
+      while (d <= end) { weeks.push(new Date(d)); d.setDate(d.getDate() + 7); }
+    }
     let any = false;
     const weekData = weeks.map(m => {
       const sums = { '数学一': 0, '408': 0, '英语一': 0, '政治': 0 };
@@ -4741,7 +4792,7 @@ APP.views.analytics = function (container) {
       svg.appendChild(svgEl('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#E3E5E1', 'stroke-width': 1 }));
       svg.appendChild(svgEl('text', { x: padL - 5, y: y + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#9aa' }, [svgTxt(g + '')]));
     }
-    const slot = plotW / 8, bw = Math.min(46, slot - 10);
+    const slot = plotW / Math.max(1, weeks.length), bw = Math.min(46, slot - 10);
     weekData.forEach((w, i) => {
       const cx = padL + slot * i + slot / 2;
       let acc = 0;
