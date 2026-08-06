@@ -5247,7 +5247,8 @@ window.APP = window.APP || {};
     toggle.appendChild(APP.el('span', { class: 'ico', text: '⟨⟩' }));
     toggle.appendChild(APP.el('span', { text: '折叠侧栏' }));
     sidebar.insertBefore(toggle, sidebar.firstChild);
-    try { if (localStorage.getItem('yutian_sidebar_collapsed') === '1') app.classList.add('nav-collapsed'); } catch (e) {}
+    // 默认展开侧边栏：避免 PC 端因上次折叠导致打开时布局显乱
+    // try { if (localStorage.getItem('yutian_sidebar_collapsed') === '1') app.classList.add('nav-collapsed'); } catch (e) {}
     // 移动端侧栏抽屉
     const overlay = document.getElementById('sidebar-overlay');
     const menuBtn = document.getElementById('mobile-menu-btn');
