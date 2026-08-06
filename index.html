@@ -288,13 +288,16 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 /* 首页各大板块之间的纵向间距 */
 .dash-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; }
 
-/* 学习出勤 · 本月日历式打卡 */
-.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 4px; }
-.mh-hdr { font-size: 9px; color: var(--muted); text-align: center; font-weight: 600; margin-bottom: 1px; }
-.mh-cell { position: relative; aspect-ratio: 1 / 1; min-height: 17px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 9px; color: var(--muted); }
+/* 学习出勤 · 本月日历式打卡（迷你，与左侧对齐） */
+.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 4px; max-width: 220px; }
+.mh-hdr { font-size: 8px; color: var(--muted); text-align: center; font-weight: 600; margin-bottom: 1px; }
+.mh-cell { position: relative; aspect-ratio: 1 / 1; min-height: 12px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 8px; color: var(--muted); }
 .mh-cell.empty { background: transparent; border: none; }
 .mh-cell.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .mh-cell.future { opacity: .35; cursor: default; }
+/* 首页左右两大栏等高对齐 */
+.dash-col { display: flex; flex-direction: column; gap: 14px; }
+.dash-col > .card { flex: 1; }
 
 /* ---------- mobile responsive ---------- */
 #mobile-menu-btn { display: none; }
@@ -1451,8 +1454,8 @@ APP.views.dashboard = function (container) {
   stack.appendChild(buildEnglishCard());
   // 左栏大块：四科总体状态 + 各科掌握情况；右栏：学习出勤 + 每周习惯打卡
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [
-    APP.el('div', {}, [subjCard, summaryCard]),
-    APP.el('div', {}, [heatCard, buildHabitCard()])
+    APP.el('div', { class: 'dash-col' }, [subjCard, summaryCard]),
+    APP.el('div', { class: 'dash-col' }, [heatCard, buildHabitCard()])
   ]));
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [taskCard, revCard]));
   stack.appendChild(buildMonthlyTasksCard());
@@ -1833,8 +1836,9 @@ APP.views.dashboard = function (container) {
         break;
       }
     }
-    // 408：按 DS→计组→OS→计网 顺序，只推荐当前正在学的第一个未掌握科目
-    // chapNo：将“第1章 绪论”与“第1章”归一为“第1章”，修复知识点章节名与大纲不一致导致的匹配失败/误推荐
+    // 408：按 DS→计组→OS→计网 顺序，只推荐当前正在学的第一个未学完章节
+    // 判定标准：章节内存在未学（mastery === 0）知识点，才视为“还没学完”需要推荐；
+    // 若所有知识点都已起步（mastery > 0），则认为该章已学过，直接推进下一章。
     const chapNo = (s) => { const m = String(s || '').match(/第\s*\d+\s*章/); return m ? m[0].replace(/\s+/g, '') : s; };
     const subjOrder = ['数据结构', '计算机组成原理', '操作系统', '计算机网络'];
     for (const subj of subjOrder) {
@@ -1848,10 +1852,9 @@ APP.views.dashboard = function (container) {
           recs.push({ subject: '408', text: subj + ' · ' + ch + '（待补充知识点）' });
           pushed = true; break;
         }
-        const avg = chPts.reduce((s, p) => s + (p.mastery || 0), 0) / chPts.length;
-        if (avg < 3) {
-          const unstarted = chPts.filter(p => (p.mastery || 0) === 0).length;
-          recs.push({ subject: '408', text: subj + ' · ' + ch + (unstarted ? '（' + unstarted + ' 个知识点未学）' : '（掌握偏弱）') });
+        const unstarted = chPts.filter(p => (p.mastery || 0) === 0).length;
+        if (unstarted > 0) {
+          recs.push({ subject: '408', text: subj + ' · ' + ch + '（' + unstarted + ' 个知识点未学）' });
           pushed = true; break;
         }
       }
@@ -1877,21 +1880,21 @@ APP.views.dashboard = function (container) {
     }
     if (key === 'boost') {
       suggestions.push({ subject: '408', text: '专题突破：DS算法题/计组Cache+流水线/OS的PV+内存/计网TCP/IP' });
-      suggestions.push({ subject: '数学一', text: '强化课（张宇/杨威/方浩）+ 880综合篇二刷' });
+      suggestions.push({ subject: '数学一', text: '强化课 + 880综合篇二刷' });
       suggestions.push({ subject: '英语一', text: '真题阅读2005-2024精做 + 完形/翻译/新题型' });
-      if (month >= 4) suggestions.push({ subject: '政治', text: '徐涛强化课 + 肖1000题' });
+      if (month >= 4) suggestions.push({ subject: '政治', text: '强化课 + 1000题' });
     }
     if (key === 'real') {
       suggestions.push({ subject: '数学一', text: '历年真题2005-2024，2天一套（做+复盘）' });
       suggestions.push({ subject: '408', text: '408真题2009-2024，严格3h限时，选择+大题分别统计' });
       suggestions.push({ subject: '英语一', text: '阅读二刷 + 完形/翻译/新题型真题 + 作文模板' });
-      suggestions.push({ subject: '政治', text: '1000题二刷 + 背诵手册 + 肖八选择题' });
+      suggestions.push({ subject: '政治', text: '1000题二刷 + 背诵手册 + 选择题巩固' });
     }
     if (key === 'sprint') {
-      suggestions.push({ subject: '数学一', text: '模拟卷（李林6+4）+ 公式默写 + 错题复盘' });
+      suggestions.push({ subject: '数学一', text: '模拟卷 + 公式默写 + 错题复盘' });
       suggestions.push({ subject: '408', text: '真题二刷 + 模拟卷 + 查漏补缺' });
       suggestions.push({ subject: '英语一', text: '全真模拟 + 作文背诵 + 保持手感' });
-      suggestions.push({ subject: '政治', text: '肖四选择题+大题背诵 + 时政' });
+      suggestions.push({ subject: '政治', text: '选择题巩固+大题背诵 + 时政' });
     }
     return suggestions.slice(0, 6);
   }
