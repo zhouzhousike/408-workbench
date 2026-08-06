@@ -5250,8 +5250,12 @@ window.APP = window.APP || {};
     toggle.appendChild(APP.el('span', { class: 'ico', text: '⟨⟩' }));
     toggle.appendChild(APP.el('span', { text: '折叠侧栏' }));
     sidebar.insertBefore(toggle, sidebar.firstChild);
-    // 默认展开侧边栏：避免 PC 端因上次折叠导致打开时布局显乱
-    // try { if (localStorage.getItem('yutian_sidebar_collapsed') === '1') app.classList.add('nav-collapsed'); } catch (e) {}
+    // 默认展开侧边栏：仅在桌面端（>560px）避免上次折叠导致布局显乱
+    try {
+      if (window.innerWidth > 560 && localStorage.getItem('yutian_sidebar_collapsed') !== '1') {
+        app.classList.remove('nav-collapsed');
+      }
+    } catch (e) {}
     // 移动端侧栏抽屉
     const overlay = document.getElementById('sidebar-overlay');
     const menuBtn = document.getElementById('mobile-menu-btn');
@@ -5260,7 +5264,7 @@ window.APP = window.APP || {};
     if (menuBtn) menuBtn.addEventListener('click', openSidebar);
     if (overlay) overlay.addEventListener('click', closeSidebar);
     document.querySelectorAll('#nav .nav-item, #nav-backup').forEach(btn => {
-      btn.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
+      btn.addEventListener('click', () => { if (window.innerWidth <= 560) closeSidebar(); });
     });
     document.getElementById('nav-backup').addEventListener('click', openBackup);
     if (APP.initTimer) APP.initTimer();
@@ -5314,11 +5318,9 @@ window.APP = window.APP || {};
   (function () {
     try {
       var app = document.getElementById('app');
-      if (app) {
+      if (app && window.innerWidth > 560) {
         app.classList.remove('nav-collapsed');
-        if (window.innerWidth > 768) {
-          app.style.gridTemplateColumns = '248px 1fr';
-        }
+        app.style.gridTemplateColumns = '248px 1fr';
       }
       localStorage.setItem('yutian_sidebar_collapsed', '0');
     } catch (e) {}
