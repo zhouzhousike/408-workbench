@@ -326,7 +326,7 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
     <aside id="sidebar">
       <div class="side-brand">
         <div class="side-logo">408</div>
-        <div><b>备考工作台</b><span>11408 · 个人系统</span></div>
+        <div><b>备考工作台</b><span>11408 · 个人系统 · 布局v3</span></div>
       </div>
       <nav id="nav"></nav>
       <div class="side-foot">
@@ -5314,7 +5314,12 @@ window.APP = window.APP || {};
   (function () {
     try {
       var app = document.getElementById('app');
-      if (app) app.classList.remove('nav-collapsed');
+      if (app) {
+        app.classList.remove('nav-collapsed');
+        if (window.innerWidth > 768) {
+          app.style.gridTemplateColumns = '248px 1fr';
+        }
+      }
       localStorage.setItem('yutian_sidebar_collapsed', '0');
     } catch (e) {}
   })();
