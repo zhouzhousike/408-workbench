@@ -295,6 +295,12 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 .mh-cell.empty { background: transparent; border: none; }
 .mh-cell.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .mh-cell.future { opacity: .35; cursor: default; }
+/* 学习出勤：左侧热力图，右侧统计 */
+.attendance-body { display: flex; gap: 18px; align-items: center; }
+.attendance-left { flex: 1; min-width: 0; }
+.attendance-right { flex: 0 0 auto; min-width: 120px; display: flex; flex-direction: column; gap: 18px; padding: 4px 8px; }
+.attendance-stat { text-align: right; }
+
 /* 首页左右两大栏等高对齐 */
 .dash-col { display: flex; flex-direction: column; gap: 14px; }
 .dash-col > .card { flex: 1; }
@@ -339,6 +345,9 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
   .pomo { left: 10px; right: 10px; bottom: 10px; width: auto; }
   /* 首页左右大栏在手机上自然单列（grid 已被 720px 媒体查询置 1fr） */
   .dash-col { gap: 14px; }
+  .attendance-body { flex-direction: column; align-items: stretch; gap: 14px; }
+  .attendance-right { flex-direction: row; justify-content: space-between; width: 100%; padding: 0; gap: 12px; }
+  .attendance-stat { text-align: left; flex: 1; }
   .daily-must .dm-row { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -1674,19 +1683,29 @@ APP.views.dashboard = function (container) {
       ]));
     }
     card.appendChild(cal);
-    // 本月累计学习时长 + 连续打卡天数（填充卡片空间，缓解右侧空旷）
+    // 本月累计学习时长 + 连续打卡天数（左右分栏：左侧日历，右侧统计）
     let mMin = 0;
     for (let d = 1; d <= curDay; d++) { const ds = monthKey + '-' + String(d).padStart(2, '0'); const l = st.studyLog[ds]; if (l) { mMin += Number(l.minutes) || 0; const sm = l.subjectMin || {}; mMin += (Number(sm.math) || 0) + (Number(sm.cs) || 0) + (Number(sm.eng) || 0) + (Number(sm.pol) || 0); } }
     let streak = 0; let dd = today; while (studied(dd)) { streak++; dd = U.addDays(dd, -1); }
     const mH = Math.floor(mMin / 60), mRem = mMin % 60;
-    card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:12px;font-size:12.5px' }, [
-      APP.el('span', { class: 'muted', text: '本月累计学习' }),
-      APP.el('span', { style: 'font-weight:600', text: (mH > 0 ? mH + 'h ' : '') + mRem + 'min' })
+
+    const body = APP.el('div', { class: 'attendance-body' });
+    const left = APP.el('div', { class: 'attendance-left' });
+    left.appendChild(cal);
+
+    const right = APP.el('div', { class: 'attendance-right' });
+    right.appendChild(APP.el('div', { class: 'attendance-stat' }, [
+      APP.el('div', { class: 'muted', style: 'font-size:12px', text: '本月累计学习' }),
+      APP.el('div', { style: 'font-size:20px;font-weight:700;line-height:1.2;margin-top:4px', text: (mH > 0 ? mH + 'h ' : '') + mRem + 'min' })
     ]));
-    card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:4px;font-size:12.5px' }, [
-      APP.el('span', { class: 'muted', text: '连续打卡' }),
-      APP.el('span', { style: 'font-weight:600;color:var(--accent)', text: streak + ' 天' })
+    right.appendChild(APP.el('div', { class: 'attendance-stat' }, [
+      APP.el('div', { class: 'muted', style: 'font-size:12px', text: '连续打卡' }),
+      APP.el('div', { style: 'font-size:20px;font-weight:700;line-height:1.2;margin-top:4px;color:var(--accent)', text: streak + ' 天' })
     ]));
+
+    body.appendChild(left);
+    body.appendChild(right);
+    card.appendChild(body);
     return card;
   }
   function studied(d) {
