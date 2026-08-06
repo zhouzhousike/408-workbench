@@ -53,14 +53,13 @@ button { font-family: inherit; cursor: pointer; }
   flex: 0 0 248px; width: 248px;
   /* 底部留出 72px，避免被固定左下角的番茄钟面板遮挡「备份/设置」 */
 }
-.side-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; }
-.side-logo {
-  width: 30px; height: 30px; border-radius: 8px;
-  background: linear-gradient(135deg, #93A4C1, #18202B);
-  color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 13px;
+.side-brand { display: flex; align-items: center; justify-content: center; gap: 0; padding: 4px 8px 16px; }
+.side-brand b { font-size: 15px; letter-spacing: .3px; }
+.side-toggle {
+  margin-bottom: 6px; color: var(--muted); justify-content: center !important;
+  padding-left: 0 !important; padding-right: 0 !important;
 }
-.side-brand b { font-size: 14px; letter-spacing: .3px; }
-.side-brand span { font-size: 11px; color: var(--muted); display: block; }
+.side-toggle .ico { font-weight: 700; font-size: 16px; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 11px; border-radius: 9px; color: var(--text-2);
@@ -76,7 +75,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ---------- sidebar collapse ---------- */
 #app.nav-collapsed #sidebar { flex: 0 0 70px; width: 70px; }
 #app.nav-collapsed .side-brand { justify-content: center; padding: 4px 0 16px; }
-#app.nav-collapsed .side-brand b, #app.nav-collapsed .side-brand span { display: none; }
+#app.nav-collapsed .side-brand b { display: none; }
 #app.nav-collapsed .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
 #app.nav-collapsed .nav-item span:not(.ico) { display: none; }
 #app.nav-collapsed .side-foot .nav-item { justify-content: center; }
@@ -326,8 +325,7 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
   <div id="app">
     <aside id="sidebar">
       <div class="side-brand">
-        <div class="side-logo">408</div>
-        <div><b>备考工作台</b><span>11408 · 个人系统 · 布局v3</span></div>
+        <b>备考工作台</b>
       </div>
       <nav id="nav"></nav>
       <div class="side-foot">
@@ -714,6 +712,7 @@ window.APP = window.APP || {};
       weekTypeOverride: {},
       dailyPractice: [],
       monthlyTasks: [],
+      todayReviewed: {},
       settings: { webdav: { url: 'https://dav.jianguoyun.com/dav/', user: '', pass: '', enabled: false, lastSync: '', lastSyncStatus: '' } }
     };
   }
@@ -726,7 +725,7 @@ window.APP = window.APP || {};
   function migrate(oldState) {
     const fresh = seed();
     // 1. 补充顶层缺失字段
-    ['plan','knowledge','math','mathKnowledge','english','ability','politics','wrongQuestions','realExams','reviews','todayTasks','studyLog','meta','settings','monthlyTasks','habitLog'].forEach(k => {
+    ['plan','knowledge','math','mathKnowledge','english','ability','politics','wrongQuestions','realExams','reviews','todayTasks','studyLog','meta','settings','monthlyTasks','habitLog','todayReviewed'].forEach(k => {
       if (oldState[k] === undefined) oldState[k] = fresh[k];
     });
     if (!oldState.mathKnowledge) oldState.mathKnowledge = {};
@@ -1333,7 +1332,8 @@ APP.views.dashboard = function (container) {
   const summaryCard = buildSubjectSummary();
 
   // 6. Review reminders（含单词记忆曲线复习）
-  const revCard = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '复习提醒', html: '' })]);
+  const dueWords = dueWordListReviews();
+  const revCard = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '复习提醒（待复习 错题 ' + dueReviews.length + ' · 单词 ' + dueWords.length + '）', html: '' })]);
   if (!dueReviews.length) revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '今天没有需要间隔复习的错题 🎉' }));
   else {
     revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin-bottom:8px', text: '3/7/14/30 天间隔复习 · 错题' }));
@@ -1348,7 +1348,8 @@ APP.views.dashboard = function (container) {
     });
   }
   // 单词 List 记忆曲线复习（按 3/7/14/30 天；无论是否有错词，背过的 List 都应按节奏复习）
-  const dueWords = dueWordListReviews();
+  st.todayReviewed = st.todayReviewed || {};
+  const wordKey = (r) => (r.date || '') + '__' + (r.listName || '');
   revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin:12px 0 6px', text: '📚 单词 List 记忆曲线复习 · 按 3/7/14/30 天 · 今日需复习 ' + dueWords.length + ' 个' }));
   if (dueWords.length) {
     dueWords.forEach(item => {
@@ -1363,12 +1364,35 @@ APP.views.dashboard = function (container) {
         APP.el('button', { class: 'btn sm primary', text: '已复习', onclick: () => {
           r.reviewCount = (Number(r.reviewCount) || 0) + 1;
           r.nextReview = U.addDays(today, APP.nextReviewGap(r.reviewCount));
+          st.todayReviewed[wordKey(r)] = true;
           APP.store.save(); APP.toast('已记录单词复习，下次：' + r.nextReview); APP.refresh();
         } })
       ]));
     });
   } else {
     revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px;padding-left:2px', text: '今天没有需要复习的单词 List 🎉' }));
+  }
+  // 今日已复习（划线保留，可回退）
+  const allRecs = (st.english && st.english.wordRecords) || {};
+  const reviewedList = [];
+  Object.values(allRecs).forEach(r => { if (r && st.todayReviewed[wordKey(r)]) reviewedList.push(r); });
+  if (reviewedList.length) {
+    revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin:14px 0 6px', text: '✅ 今日已复习（点击撤销可回退）' }));
+    reviewedList.forEach(r => {
+      revCard.appendChild(APP.el('div', { class: 'list-row', style: 'opacity:.62' }, [
+        APP.el('div', { style: 'flex:1' }, [
+          APP.el('div', { style: 'text-decoration:line-through', text: (r.listName || ('List · ' + r.date)) + ' · 已复习' }),
+          APP.el('div', { class: 'muted', style: 'font-size:12px', text: r.date + ' 背诵 · 下次 ' + (r.nextReview || '—') })
+        ]),
+        APP.el('button', { class: 'btn sm ghost', text: '撤销', onclick: () => {
+          const oldCount = Math.max(0, (Number(r.reviewCount) || 1) - 1);
+          r.reviewCount = oldCount;
+          r.nextReview = today;
+          delete st.todayReviewed[wordKey(r)];
+          APP.store.save(); APP.toast('已撤销，重新计入待复习'); APP.refresh();
+        } })
+      ]));
+    });
   }
 
   // Heatmap
@@ -1384,25 +1408,16 @@ APP.views.dashboard = function (container) {
     d = U.addDays(d, 1);
   }
   const wkRate = wkTotal ? Math.round(wkDone / wkTotal * 100) : 0;
-  const sumMinutes = tasks.reduce((s, t) => s + (Number(t.spent) || 0), 0);
-
-  const stats = APP.el('div', { class: 'grid grid-4' }, [
-    statCard('今日学习时长', (Number(log.minutes) || sumMinutes) + ' <small>分钟</small>'),
-    statCard('本周完成率', wkRate + ' <small>% (' + wkDone + '/' + wkTotal + ')</small>'),
-    statCard('待复习错题', dueReviews.length + ' <small>道</small>'),
-    statCard('当前阶段', '<small>' + (phase ? phase.name : '未设定') + '</small>')
-  ]);
 
   // Assemble
   APP.clear(container);
   const stack = APP.el('div', { class: 'dash-stack' });
   stack.appendChild(head);
+  // 英语速览置顶，方便一进首页就看到
+  stack.appendChild(buildEnglishCard());
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [buildCheckinCard(), buildWeekGoalCard()]));
-  stack.appendChild(stats);
   // 四科总体状态 |（学习出勤 + 每周习惯打卡）
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [subjCard, APP.el('div', {}, [heatCard, buildHabitCard()])]));
-  // 英语速览 / 能力雷达 紧随其后
-  stack.appendChild(buildEnglishCard());
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [taskCard, revCard]));
   stack.appendChild(summaryCard);
   stack.appendChild(buildMonthlyTasksCard());
@@ -1443,7 +1458,7 @@ APP.views.dashboard = function (container) {
       if (Number(l.minutes) > 0 || (m.math || m.cs || m.eng || m.pol) || Number(l.wordNew) > 0 || Number(l.wordOld) > 0 || Number(l.mathDone) > 0 || Number(l.csDone) > 0) wkChecked++;
       d = U.addDays(d, 1);
     }
-    card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px', text: '本周已打卡 ' + wkChecked + ' 天' }));
+    card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px', text: '本周已打卡 ' + wkChecked + ' 天' + (Number(log.minutes) > 0 ? ' · 今日 ' + Number(log.minutes) + ' 分钟' : '') }));
     return card;
   }
   function subjPill(label, min) {
@@ -1602,34 +1617,6 @@ APP.views.dashboard = function (container) {
       ]));
     }
     card.appendChild(cal);
-    // 历史热力图（自 2026-08-01 起，每格一天）
-    card.appendChild(APP.el('div', { class: 'sub', style: 'margin:14px 0 8px', text: '历史出勤（自 2026-08-01 备考起）' }));
-    const start = '2026-08-01';
-    const wrap = APP.el('div', { class: 'heat' });
-    const weeks = APP.el('div', { class: 'heat-weeks' });
-    let cur = start;
-    while (cur <= today) {
-      const col = APP.el('div', { class: 'heat-week' });
-      for (let i = 0; i < 7; i++) {
-        const date = cur;
-        const sl = st.studyLog[date];
-        const min = sl ? Number(sl.minutes) || 0 : 0;
-        let lvl = 0;
-        if (min > 0) lvl = min <= 30 ? 1 : min <= 60 ? 2 : 3;
-        const cell = APP.el('div', { class: 'heat-cell l' + lvl, title: date + (min > 0 ? ' · ' + min + ' 分钟' : ' · 未学习') });
-        col.appendChild(cell);
-        cur = U.addDays(cur, 1);
-      }
-      weeks.appendChild(col);
-    }
-    wrap.appendChild(weeks);
-    wrap.appendChild(APP.el('div', { class: 'heat-legend' }, [
-      APP.el('span', { class: 'muted', text: '少' }),
-      APP.el('div', { class: 'heat-cell l0' }), APP.el('div', { class: 'heat-cell l1' }),
-      APP.el('div', { class: 'heat-cell l2' }), APP.el('div', { class: 'heat-cell l3' }),
-      APP.el('span', { class: 'muted', text: '多' })
-    ]));
-    card.appendChild(wrap);
     return card;
   }
   function studied(d) {
@@ -5101,16 +5088,16 @@ window.APP = window.APP || {};
   const NAV = [
     { key: 'dashboard', label: '首页', ico: '▦' },
     { key: 'plan', label: '总计划', ico: '▤' },
-    { key: 'knowledge', label: '408', ico: '📚' },
+    { key: 'knowledge', label: '408', ico: '◈' },
     { key: 'math', label: '数学', ico: '∑' },
     { key: 'english', label: '英语', ico: 'A' },
     { key: 'politics', label: '政治', ico: '⚑' },
     { key: 'wrongq', label: '错题复盘', ico: '✎' },
-    { key: 'realexam', label: '真题系统', ico: '📝' },
-    { key: 'diary', label: '学习日志', ico: '🗓' },
-    { key: 'review', label: '复盘系统', ico: '📊' },
+    { key: 'realexam', label: '真题系统', ico: '▣' },
+    { key: 'diary', label: '学习日志', ico: '▪' },
+    { key: 'review', label: '复盘系统', ico: '◫' },
     { key: 'analytics', label: '数据分析', ico: '◑' },
-    { key: 'ai', label: 'AI 助手', ico: '✦' }
+    { key: 'ai', label: 'AI 助手', ico: '◇' }
   ];
   const TITLES = {}; NAV.forEach(n => TITLES[n.key] = n.label);
 
@@ -5249,7 +5236,6 @@ window.APP = window.APP || {};
       try { localStorage.setItem('yutian_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
     } });
     toggle.appendChild(APP.el('span', { class: 'ico', text: '⟨⟩' }));
-    toggle.appendChild(APP.el('span', { text: '折叠侧栏' }));
     sidebar.insertBefore(toggle, sidebar.firstChild);
     // 桌面端始终展开侧边栏；移动端保持抽屉默认关闭
     try {
