@@ -4510,23 +4510,43 @@ APP.views.analytics = function (container) {
   APP.clear(container);
   container.appendChild(head);
 
+  // ---------- 数据分析时间范围切换（周/月/全部，统一时间轴规则） ----------
+  const daPeriod = APP._daPeriod || 'month';
+  const periodLabel = { week: '本周', month: '本月', all: '全部' };
+  function periodDays(p) {
+    const [y, mo, dd] = today.split('-').map(Number);
+    const _dow = (yy, mm, d) => (new Date(yy, mm - 1, d).getDay() + 6) % 7; // 周一=0
+    const _range = (s, e) => { const o = []; let d = s; while (d <= e) { o.push(d); d = U.addDays(d, 1); } return o; };
+    if (p === 'week') { const m = U.addDays(today, -_dow(y, mo, dd)); return _range(m, U.addDays(m, 6)); } // 本周一~周日
+    if (p === 'month') { const first = y + '-' + String(mo).padStart(2, '0') + '-01'; const ld = new Date(y, mo, 0).getDate(); const last = y + '-' + String(mo).padStart(2, '0') + '-' + String(ld).padStart(2, '0'); return _range(first, last); } // 本月1号~月末
+    return _range('2026-08-03', today); // 全部：从实际学习起点 8/3 起
+  }
+  container.appendChild(APP.el('div', { class: 'row', style: 'gap:8px;margin-bottom:14px;align-items:center' }, [
+    APP.el('span', { class: 'muted', style: 'font-size:12px', text: '时间范围' }),
+    ...['week', 'month', 'all'].map(k => APP.el('button', {
+      class: 'chip',
+      style: k === daPeriod ? 'border-color:var(--accent);color:var(--accent);font-weight:600' : '',
+      text: periodLabel[k],
+      onclick: () => { APP._daPeriod = k; APP.refresh(); }
+    }))
+  ]));
+
   // ---------- P5 新增：三张原生 SVG 图表 ----------
   container.appendChild(weeklyStackedBar());
   container.appendChild(wordCurve());
   container.appendChild(accuracyCurve());
 
-  // ---------- 学习趋势（近30天）----------
+  // ---------- 学习趋势（按时间范围）----------
   let days = [], maxMin = 0;
-  for (let i = 29; i >= 0; i--) {
-    const d = U.addDays(today, -i);
+  periodDays(daPeriod).forEach(d => {
     const min = Number((st.studyLog[d] || {}).minutes) || 0;
     days.push({ d, min });
     if (min > maxMin) maxMin = min;
-  }
-  const trend = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '学习时长趋势（近 30 天，分钟/天）' })]);
+  });
+  const trend = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '学习时长趋势（' + periodLabel[daPeriod] + '，分钟/天）' })]);
   const totalMin = days.reduce((s, x) => s + x.min, 0);
   trend.appendChild(APP.el('div', { class: 'row', style: 'margin-bottom:12px' }, [
-    APP.el('div', {}, [APP.el('div', { class: 'value', style: 'font-size:22px;font-weight:700', text: totalMin + ' 分' }), APP.el('div', { class: 'muted', style: 'font-size:12px', text: '近30天累计 · ' + (totalMin / 60).toFixed(1) + ' h' })])
+    APP.el('div', {}, [APP.el('div', { class: 'value', style: 'font-size:22px;font-weight:700', text: totalMin + ' 分' }), APP.el('div', { class: 'muted', style: 'font-size:12px', text: periodLabel[daPeriod] + '累计 · ' + (totalMin / 60).toFixed(1) + ' h' })])
   ]));
   const bars = APP.el('div', { style: 'display:flex;align-items:flex-end;gap:3px;height:120px;overflow-x:auto' });
   days.forEach(x => {
@@ -4706,17 +4726,16 @@ APP.views.analytics = function (container) {
     return card;
   }
 
-  // 2) 单词曲线（近30天，新词/旧词）
+  // 2) 单词曲线（按时间范围，新词/旧词）
   function wordCurve() {
-    const card = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '单词曲线（近 30 天，新词 / 旧词）' })]);
+    const card = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '单词曲线（' + periodLabel[daPeriod] + '，新词 / 旧词）' })]);
     const days = []; let any = false;
-    for (let i = 29; i >= 0; i--) {
-      const d = U.addDays(today, -i);
+    periodDays(daPeriod).forEach(d => {
       const log = st.studyLog[d] || {};
       const wn = Number(log.wordNew) || 0, wo = Number(log.wordOld) || 0;
       if (wn || wo) any = true;
       days.push({ d, wn, wo });
-    }
+    });
     if (!any) { card.appendChild(APP.el('div', { class: 'empty', text: '暂无打卡数据，打卡后这里会显示图表（已打卡 ' + checkedDaysCount() + ' 天）' })); return card; }
     let maxV = 1; days.forEach(x => maxV = Math.max(maxV, x.wn, x.wo));
     maxV = Math.ceil(maxV / 10) * 10;
@@ -4741,12 +4760,11 @@ APP.views.analytics = function (container) {
     return card;
   }
 
-  // 3) 正确率曲线（近30天，数学 / 408，做题数为0的天跳过）
+  // 3) 正确率曲线（按时间范围，数学一 / 专业课，做题数为0的天跳过）
   function accuracyCurve() {
-    const card = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '正确率曲线（近 30 天，数学 / 408）' })]);
+    const card = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'sec-title', text: '正确率曲线（' + periodLabel[daPeriod] + '，数学一 / 专业课）' })]);
     const days = []; let any = false;
-    for (let i = 29; i >= 0; i--) {
-      const d = U.addDays(today, -i);
+    periodDays(daPeriod).forEach(d => {
       const log = st.studyLog[d] || {};
       const md = Number(log.mathDone) || 0, mw = Number(log.mathWrong) || 0;
       const cd = Number(log.csDone) || 0, cw = Number(log.csWrong) || 0;
@@ -4754,7 +4772,7 @@ APP.views.analytics = function (container) {
       const cAcc = cd > 0 ? (cd - cw) / cd * 100 : null;
       if (mAcc != null || cAcc != null) any = true;
       days.push({ mAcc, cAcc });
-    }
+    });
     if (!any) { card.appendChild(APP.el('div', { class: 'empty', text: '暂无做题数据，打卡后这里会显示图表（已打卡 ' + checkedDaysCount() + ' 天）' })); return card; }
     const W = 680, H = 220, padL = 34, padR = 10, padT = 12, padB = 22;
     const plotW = W - padL - padR, plotH = H - padT - padB;
