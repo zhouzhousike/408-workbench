@@ -2853,8 +2853,17 @@ APP.views.english = function (container) {
 
     // 4.5 单词默写复盘总览（聚合所有日期的默写记录）
     const allRecs = Object.values((eng.wordRecords) || {}).filter(r => r && (Number(r.total) || 0) > 0);
-    const passOf = (r) => r.pass || ((Number(r.reviewCount) || 0) === 0 ? '一刷' : '二刷');
     const passOrder = ['一刷', '二刷', '三刷', '四刷', '五刷', '六刷'];
+    // 轮次自动推导：同一 listName 按日期第一次出现=一刷、第二次=二刷……
+    const passRank = new Map(); // key = r.date + '|' + (r.listName || r.date)
+    allRecs.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(r => {
+      const ln = r.listName || r.date || '';
+      const key = (r.date || '') + '|' + ln;
+      const cnt = (passRank.get(ln) || 0) + 1;
+      passRank.set(ln, cnt);
+      passRank.set(key, passOrder[Math.min(cnt, passOrder.length) - 1] || '一刷');
+    });
+    const passOf = (r) => passRank.get((r.date || '') + '|' + (r.listName || r.date || '')) || '一刷';
     const sumWords = allRecs.reduce((s, r) => s + (Number(r.total) || 0), 0);
     const recAcc = (r) => { const tot = Number(r.total) || 0; const err = (r.spellingErrors || []).length + (r.meaningErrors || []).length; return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
     const groupAcc = (arr) => { const tot = arr.reduce((s, r) => s + (Number(r.total) || 0), 0); const err = arr.reduce((s, r) => s + (r.spellingErrors || []).length + (r.meaningErrors || []).length, 0); return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
@@ -2954,14 +2963,23 @@ APP.views.english = function (container) {
     }
     function editRec() {
       const rec = (eng.wordRecords || {})[today] || { total: 0, spellingErrors: [], meaningErrors: [], suggestions: '' };
-      const defPass = rec.pass || ((Number(rec.reviewCount) || 0) === 0 ? '一刷' : '二刷');
+      // 默认取历史第一个 List，方便今天继续复习；没有则新建 List 1
+      const existingLists = [...new Set(Object.values(eng.wordRecords || {}).map(r => r.listName).filter(Boolean))];
+      const firstList = existingLists[0] || 'List 1';
+      const recListName = rec.listName || firstList;
+      let prevCount = 0;
+      Object.values(eng.wordRecords || {}).forEach(r => { if (r && r.listName === recListName && r.date && r.date < today) prevCount++; });
+      const derivedPass = passOrder[Math.min(prevCount, passOrder.length - 1)] || '一刷';
+      const defPass = derivedPass;
       const fTotal = APP.el('input', { type: 'number', value: rec.total || 0, placeholder: '总词数' });
+      const fListName = APP.el('input', { value: recListName, placeholder: '如 List 1', style: 'min-width:120px' });
       const fPass = APP.el('select', {}, ['一刷', '二刷', '三刷', '四刷', '五刷', '六刷'].map(p => APP.el('option', { value: p, selected: p === defPass ? 'selected' : false, text: p })));
       const fSpell = APP.el('textarea', { value: (rec.spellingErrors || []).join('、'), placeholder: '拼写错误词，用顿号/逗号/换行分隔', style: 'min-height:50px' });
       const fMean = APP.el('textarea', { value: (rec.meaningErrors || []).map(m => m.word + '：' + m.meaning).join('\n'), placeholder: '释义错误，每行格式：单词：正确释义', style: 'min-height:80px' });
       const fSug = APP.el('textarea', { value: rec.suggestions || '', placeholder: '复习建议', style: 'min-height:60px' });
       APP.openModal('录入默写掌握情况 · ' + today, APP.el('div', {}, [
         APP.field('总词数', fTotal),
+        APP.field('List 名称（今天要复习的 List）', fListName),
         APP.field('轮次（首次写=一刷，复盘=二刷…）', fPass),
         APP.field('拼写错误词（顿号/逗号/换行分隔）', fSpell),
         APP.field('释义错误（每行：单词：释义）', fMean),
@@ -2977,7 +2995,7 @@ APP.views.english = function (container) {
             const m = line.match(/^(.+?)[：:](.+)$/);
             if (m) meaning.push({ word: m[1].trim(), meaning: m[2].trim() });
           });
-          const listName = rec.listName || ('List ' + (Object.keys(eng.wordRecords).length + 1));
+          const listName = fListName.value.trim() || rec.listName || firstList;
           eng.wordRecords[today] = {
             date: today, total,
             spellingErrors: spelling, meaningErrors: meaning, suggestions: fSug.value.trim(),
