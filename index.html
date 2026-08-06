@@ -53,13 +53,21 @@ button { font-family: inherit; cursor: pointer; }
   flex: 0 0 248px; width: 248px;
   /* 底部留出 72px，避免被固定左下角的番茄钟面板遮挡「备份/设置」 */
 }
-.side-brand { display: flex; align-items: center; justify-content: center; gap: 0; padding: 4px 8px 16px; }
-.side-brand b { font-size: 15px; letter-spacing: .3px; }
-.side-toggle {
-  margin-bottom: 6px; color: var(--muted); justify-content: center !important;
-  padding-left: 0 !important; padding-right: 0 !important;
+.side-brand {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 6px 8px 16px; cursor: pointer; user-select: none;
+  color: var(--ink);
 }
-.side-toggle .ico { font-weight: 700; font-size: 16px; }
+.side-brand:hover { opacity: .85; }
+.side-brand .brand-ico {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: linear-gradient(135deg, #2563EB, #1E40AF);
+  color: #fff; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; flex: 0 0 28px;
+  box-shadow: 0 2px 6px rgba(37,99,235,.25);
+}
+.side-brand b { font-size: 15px; letter-spacing: .3px; }
+.side-toggle { display: none; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 11px; border-radius: 9px; color: var(--text-2);
@@ -269,10 +277,10 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 @media (max-width: 680px) { .daily-must .dm-row { grid-template-columns: repeat(3, 1fr); } }
 
 /* 每周习惯打卡（数据结构/高数/单词/长难句/语法 × 周一至周日） */
-.habit-grid { display: grid; grid-template-columns: 74px repeat(7, 1fr); gap: 6px; margin-top: 12px; align-items: center; }
-.habit-hdr { font-size: 11px; color: var(--muted); text-align: center; font-weight: 600; }
-.habit-row-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-.habit-cell { height: 30px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); cursor: pointer; transition: background .15s, border-color .15s, transform .08s; }
+.habit-grid { display: grid; grid-template-columns: 58px repeat(7, 1fr); gap: 3px; margin-top: 8px; align-items: center; }
+.habit-hdr { font-size: 10px; color: var(--muted); text-align: center; font-weight: 600; }
+.habit-row-label { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.habit-cell { height: 22px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border); cursor: pointer; transition: background .15s, border-color .15s, transform .08s; }
 .habit-cell:hover { border-color: var(--border-strong); }
 .habit-cell:active { transform: scale(.94); }
 .habit-cell.on { background: var(--accent); border-color: var(--accent); }
@@ -281,9 +289,9 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 .dash-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; }
 
 /* 学习出勤 · 本月日历式打卡 */
-.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 4px; }
-.mh-hdr { font-size: 10.5px; color: var(--muted); text-align: center; font-weight: 600; margin-bottom: 2px; }
-.mh-cell { position: relative; aspect-ratio: 1 / 1; min-height: 26px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 11.5px; color: var(--muted); }
+.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 4px; }
+.mh-hdr { font-size: 10px; color: var(--muted); text-align: center; font-weight: 600; margin-bottom: 2px; }
+.mh-cell { position: relative; aspect-ratio: 1 / 1; min-height: 22px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 10px; color: var(--muted); }
 .mh-cell.empty { background: transparent; border: none; }
 .mh-cell.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .mh-cell.future { opacity: .35; cursor: default; }
@@ -324,7 +332,8 @@ pre.box { background: var(--surface-2); border: 1px solid var(--border); border-
 <body>
   <div id="app">
     <aside id="sidebar">
-      <div class="side-brand">
+      <div class="side-brand" id="side-brand" title="折叠 / 展开侧栏">
+        <div class="brand-ico">408</div>
         <b>备考工作台</b>
       </div>
       <nav id="nav"></nav>
@@ -485,8 +494,8 @@ window.APP = window.APP || {};
       '2027年9月启动：徐涛强化课（马原+毛中特1.5倍速）+ 肖1000对应章节，之前不动'
     ]
   };
-  // 间隔复习节奏：第1/2/3/4+次复习后分别隔 3/7/14/30 天
-  APP.REVIEW_GAPS = [3, 7, 14, 30];
+  // 间隔复习节奏：第1~6次复习后分别隔 1/2/4/7/15/30 天（记忆曲线）
+  APP.REVIEW_GAPS = [1, 2, 4, 7, 15, 30];
   APP.nextReviewGap = function (reviewCount) {
     if (!reviewCount || reviewCount < 1) return APP.REVIEW_GAPS[0];
     return APP.REVIEW_GAPS[Math.min(reviewCount, APP.REVIEW_GAPS.length) - 1];
@@ -1334,9 +1343,10 @@ APP.views.dashboard = function (container) {
   // 6. Review reminders（含单词记忆曲线复习）
   const dueWords = dueWordListReviews();
   const revCard = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '复习提醒（待复习 错题 ' + dueReviews.length + ' · 单词 ' + dueWords.length + '）', html: '' })]);
-  if (!dueReviews.length) revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '今天没有需要间隔复习的错题 🎉' }));
+  revCard.appendChild(APP.el('div', { style: 'font-size:11.5px;color:var(--muted);margin-bottom:10px', text: '记忆曲线间隔：1 / 2 / 4 / 7 / 15 / 30 天' }));
+  // 错题间隔复习
+  if (!dueReviews.length) revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '✓ 今天没有需要间隔复习的错题' }));
   else {
-    revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin-bottom:8px', text: '3/7/14/30 天间隔复习 · 错题' }));
     dueReviews.forEach(q => {
       revCard.appendChild(APP.el('div', { class: 'list-row' }, [
         APP.el('div', { style: 'flex:1' }, [
@@ -1347,10 +1357,9 @@ APP.views.dashboard = function (container) {
       ]));
     });
   }
-  // 单词 List 记忆曲线复习（按 3/7/14/30 天；无论是否有错词，背过的 List 都应按节奏复习）
+  // 单词 List 记忆曲线复习（无论是否有错词，背过的 List 都按 1/2/4/7/15/30 节奏复习）
   st.todayReviewed = st.todayReviewed || {};
   const wordKey = (r) => (r.date || '') + '__' + (r.listName || '');
-  revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin:12px 0 6px', text: '📚 单词 List 记忆曲线复习 · 按 3/7/14/30 天 · 今日需复习 ' + dueWords.length + ' 个' }));
   if (dueWords.length) {
     dueWords.forEach(item => {
       const r = item.r;
@@ -1358,8 +1367,8 @@ APP.views.dashboard = function (container) {
       const gap = APP.nextReviewGap(Number(r.reviewCount) || 0);
       revCard.appendChild(APP.el('div', { class: 'list-row' }, [
         APP.el('div', { style: 'flex:1' }, [
-          APP.el('div', { text: (r.listName || ('List · ' + r.date)) + ' · 第 ' + item.dueIndex + ' 次复习' }),
-          APP.el('div', { class: 'muted', style: 'font-size:12px', text: r.date + ' 背诵 · 间隔 ' + gap + ' 天 · ' + (errCount ? errCount + ' 个错词' : '无错词，巩固即可') })
+          APP.el('div', { text: (r.listName || ('List · ' + r.date)) + ' · 单词第 ' + item.dueIndex + ' 次复习' }),
+          APP.el('div', { class: 'muted', style: 'font-size:12px', text: r.date + ' 背诵 · 间隔 ' + gap + ' 天' + (errCount ? ' · ' + errCount + ' 个错词' : ' · 无错词') })
         ]),
         APP.el('button', { class: 'btn sm primary', text: '已复习', onclick: () => {
           r.reviewCount = (Number(r.reviewCount) || 0) + 1;
@@ -1370,14 +1379,37 @@ APP.views.dashboard = function (container) {
       ]));
     });
   } else {
-    revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px;padding-left:2px', text: '今天没有需要复习的单词 List 🎉' }));
+    // 背过 List 但今天不 due，也展示进度，避免空白
+    const allRecs = (st.english && st.english.wordRecords) || {};
+    const recArr = Object.values(allRecs);
+    if (recArr.length) {
+      recArr.forEach(r => {
+        const cnt = Number(r.reviewCount) || 0;
+        const nx = r.nextReview || U.addDays(r.date || today, APP.REVIEW_GAPS[0]);
+        const errCount = (r.spellingErrors || []).length + (r.meaningErrors || []).length;
+        revCard.appendChild(APP.el('div', { class: 'list-row', style: 'opacity:.85' }, [
+          APP.el('div', { style: 'flex:1' }, [
+            APP.el('div', { text: (r.listName || ('List · ' + r.date)) + ' · 单词已复习 ' + cnt + ' 次' }),
+            APP.el('div', { class: 'muted', style: 'font-size:12px', text: '下次复习 ' + nx + (errCount ? ' · ' + errCount + ' 个错词待巩固' : '') })
+          ]),
+          APP.el('button', { class: 'btn sm ghost', text: '复习', onclick: () => {
+            r.reviewCount = (Number(r.reviewCount) || 0) + 1;
+            r.nextReview = U.addDays(today, APP.nextReviewGap(r.reviewCount));
+            st.todayReviewed[wordKey(r)] = true;
+            APP.store.save(); APP.toast('已记录单词复习，下次：' + r.nextReview); APP.refresh();
+          } })
+        ]));
+      });
+      revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:8px', text: '（今日未到记忆曲线节点，可手动提前复习）' }));
+    } else {
+      revCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '🎉 英语单词暂无需复习' }));
+    }
   }
   // 今日已复习（划线保留，可回退）
-  const allRecs = (st.english && st.english.wordRecords) || {};
   const reviewedList = [];
-  Object.values(allRecs).forEach(r => { if (r && st.todayReviewed[wordKey(r)]) reviewedList.push(r); });
+  Object.values((st.english && st.english.wordRecords) || {}).forEach(r => { if (r && st.todayReviewed[wordKey(r)]) reviewedList.push(r); });
   if (reviewedList.length) {
-    revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin:14px 0 6px', text: '✅ 今日已复习（点击撤销可回退）' }));
+    revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin:14px 0 4px', text: '✅ 今日已复习（点击撤销可回退）' }));
     reviewedList.forEach(r => {
       revCard.appendChild(APP.el('div', { class: 'list-row', style: 'opacity:.62' }, [
         APP.el('div', { style: 'flex:1' }, [
@@ -1413,9 +1445,10 @@ APP.views.dashboard = function (container) {
   APP.clear(container);
   const stack = APP.el('div', { class: 'dash-stack' });
   stack.appendChild(head);
-  // 英语速览置顶，方便一进首页就看到
-  stack.appendChild(buildEnglishCard());
+  // 今日打卡 + 本周目标
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [buildCheckinCard(), buildWeekGoalCard()]));
+  // 英语速览放在今日打卡板块下方
+  stack.appendChild(buildEnglishCard());
   // 四科总体状态 |（学习出勤 + 每周习惯打卡）
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [subjCard, APP.el('div', {}, [heatCard, buildHabitCard()])]));
   stack.appendChild(APP.el('div', { class: 'grid grid-2' }, [taskCard, revCard]));
@@ -1486,9 +1519,10 @@ APP.views.dashboard = function (container) {
       const a = subjTotal > 0 ? min / subjTotal : 0;
       let warn = false;
       if (tgt > 0) { if (Math.abs(a - tgt) / tgt > 0.3) warn = true; } else if (min > 0) warn = true;
+      const showWarnIcon = warn && (label === '英语一' || label === '政治');
       card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:4px;font-size:12.5px' + (warn ? ';color:var(--danger);font-weight:600' : '') }, [
         APP.el('span', { text: label }),
-        APP.el('span', { class: 'muted', text: Math.round(min / 60 * 10) / 10 + 'h' + (warn ? ' ⚠' : '') })
+        APP.el('span', { class: 'muted', text: Math.round(min / 60 * 10) / 10 + 'h' + (showWarnIcon ? ' ⚠' : '') })
       ]));
     });
     return card;
@@ -1756,7 +1790,7 @@ APP.views.dashboard = function (container) {
     const out = [];
     Object.values(recs).forEach(r => {
       const base = r.date || today;
-      const next = r.nextReview || U.addDays(base, 3);
+      const next = r.nextReview || U.addDays(base, APP.REVIEW_GAPS[0]);
       if (next <= today) {
         const rc = Number(r.reviewCount) || 0;
         out.push({ r, dueIndex: rc + 1 });
@@ -1774,39 +1808,49 @@ APP.views.dashboard = function (container) {
     const d = U.daysBetween(W1, U.todayStr());
     return Math.floor(Math.max(0, d) / 7) + 1;
   }
-  // 基于当前阶段、已打卡进度、章节进度，推荐还未学习的科目章节
+  // 基于当前阶段、章节进度，按科目顺序推荐当前正在学的下一任务（不并行多本/多科）
   function recommendUnstudiedChapters(st) {
     const recs = [];
     const wk = currentWeekNum();
-    // 数学：建议周次已到期/临近且进度<100 的章节（每科取最早未完成的 1 个）
-    ['高等数学', '线性代数', '概率论'].forEach(course => {
-      const due = (st.math[course] || [])
+    // 数学：按 高数→线代→概率论 顺序，只推荐当前正在学的第一门未完成课程
+    const mathCourses = ['高等数学', '线性代数', '概率论'];
+    for (const course of mathCourses) {
+      const chapters = st.math[course] || [];
+      const due = chapters
         .map(c => ({ c, wn: parseWeekNum(c.targetWeek) }))
         .filter(x => x.wn != null && x.wn <= wk + 1 && (Number(x.c.progress) || 0) < 100)
         .sort((a, b) => a.wn - b.wn);
       if (due.length) {
         const x = due[0];
         recs.push({ subject: '数学一', text: course + ' · ' + x.c.chapter + '（建议' + x.c.targetWeek + '，进度' + (x.c.progress || 0) + '%）' });
-      } else {
-        const unstarted = (st.math[course] || []).filter(c => (Number(c.progress) || 0) < 100);
-        if (unstarted.length) recs.push({ subject: '数学一', text: course + ' · 推进未完成章节（剩 ' + unstarted.length + ' 章）' });
+        break;
       }
-    });
-    // 408：按科目顺序推荐第一个未掌握章节
+      const unstarted = chapters.filter(c => (Number(c.progress) || 0) < 100);
+      if (unstarted.length) {
+        recs.push({ subject: '数学一', text: course + ' · 推进未完成章节（剩 ' + unstarted.length + ' 章）' });
+        break;
+      }
+    }
+    // 408：按 DS→计组→OS→计网 顺序，只推荐当前正在学的第一个未掌握科目
     const subjOrder = ['数据结构', '计算机组成原理', '操作系统', '计算机网络'];
     for (const subj of subjOrder) {
       const chs = APP.KNOWLEDGE_CHAPTERS[subj] || [];
       const pts = st.knowledge[subj] || [];
+      let pushed = false;
       for (const ch of chs) {
         const chPts = pts.filter(p => p.chapter === ch);
-        if (!chPts.length) { recs.push({ subject: '408', text: subj + ' · ' + ch + '（待补充知识点）' }); break; }
+        if (!chPts.length) {
+          recs.push({ subject: '408', text: subj + ' · ' + ch + '（待补充知识点）· 跟宇天Q' });
+          pushed = true; break;
+        }
         const avg = chPts.reduce((s, p) => s + (p.mastery || 0), 0) / chPts.length;
         if (avg < 3) {
           const unstarted = chPts.filter(p => (p.mastery || 0) === 0).length;
-          recs.push({ subject: '408', text: subj + ' · ' + ch + (unstarted ? '（' + unstarted + ' 个知识点未学）' : '（掌握偏弱）') });
-          break;
+          recs.push({ subject: '408', text: subj + ' · ' + ch + (unstarted ? '（' + unstarted + ' 个知识点未学）' : '（掌握偏弱）') + ' · 跟宇天Q' });
+          pushed = true; break;
         }
       }
+      if (pushed) break;
     }
     return recs;
   }
@@ -1818,12 +1862,7 @@ APP.views.dashboard = function (container) {
     const month = Number(U.todayStr().slice(5, 7));
     const year = Number(U.todayStr().slice(0, 4));
     if (key === 'base') {
-      // 408：按月份推荐具体科目
-      const m = year * 100 + month;
-      if (m <= 202609) suggestions.push({ subject: '408', text: '数据结构基础（绪论→排序），跟宇天Q' });
-      else if (m <= 202611) suggestions.push({ subject: '408', text: '计组基础（概述→总线IO），跟宇天Q' });
-      else if (m <= 202612) suggestions.push({ subject: '408', text: '操作系统基础（进程管理→IO管理），跟宇天Q' });
-      else suggestions.push({ subject: '408', text: '计算机网络基础（体系结构→应用层），可听湖科大' });
+      // 408 已由 recommendUnstudiedChapters 按实际进度单科目推进，不再按月份重复推荐
       // 英语：单词+语法
       let wordTotal = 0; for (const d in (st.studyLog || {})) wordTotal += Number(st.studyLog[d].wordNew) || 0;
       if (wordTotal < 1800) suggestions.push({ subject: '英语一', text: '核心词背诵 30-40 新词 + 复习（新:旧=1:3）' });
@@ -1851,66 +1890,45 @@ APP.views.dashboard = function (container) {
     }
     return suggestions.slice(0, 6);
   }
-  // 各科练习掌握情况（基于近7天 dailyPractice 与错题；含英语）
+  // 各科练习掌握情况（近7天 dailyPractice + 英语词汇；4门全显，顺序 408/数学一/英语一/政治）
   function buildSubjectSummary() {
     const card = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '各科练习掌握情况（近 7 天）', html: '' })]);
     const since = U.addDays(today, -6);
     const recent = (st.dailyPractice || []).filter(r => r.date >= since && r.date <= today);
-    if (!recent.length) {
-      card.appendChild(APP.el('div', { class: 'empty', text: '近 7 天暂无刷题记录，去「错题复盘」录入后会在这里汇总。' }));
-      return card;
-    }
-    APP.BOARDS.filter(b => b !== '政治').forEach(b => {
+    // 固定顺序：408、数学一、英语一、政治（全部呈现，未启动也显示 0%）
+    ['408', '数学一', '英语一', '政治'].forEach(b => {
+      if (b === '英语一') {
+        let wnTotal = 0; for (const d in st.studyLog) wnTotal += Number(st.studyLog[d].wordNew) || 0;
+        const vocabPct = Math.min(100, Math.round(wnTotal / 1800 * 100));
+        const dueW = dueWordReviews().length;
+        const eColor = vocabPct >= 80 ? '#1E40AF' : vocabPct >= 50 ? '#93A4C1' : 'var(--danger)';
+        card.appendChild(APP.el('div', { style: 'margin-bottom:10px' }, [
+          APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [
+            APP.subjectTag(b),
+            APP.el('span', { class: 'muted', style: 'font-size:12px', text: '新词 ' + wnTotal + '/1800 · 待复习 ' + dueW + ' 个' })
+          ]),
+          APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + vocabPct + '%;background:' + eColor })])
+        ]));
+        return;
+      }
       const rec = recent.filter(r => r.subject === b);
       const total = rec.reduce((s, r) => s + (Number(r.total) || 0), 0);
       const correct = rec.reduce((s, r) => s + (Number(r.correct) || 0), 0);
       const wrong = total - correct;
       const acc = total > 0 ? Math.round(correct / total * 100) : 0;
-      if (total === 0 && b !== '政治') return; // 政治未启动不显示
-      if (total === 0 && b === '政治') {
-        card.appendChild(APP.el('div', { style: 'margin-bottom:8px' }, [
-          APP.el('div', { class: 'spread' }, [APP.subjectTag(b), APP.el('span', { class: 'muted', style: 'font-size:12px', text: '未启动' })]),
-          APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:0%' })])
-        ]));
-        return;
-      }
-      const color = acc >= 80 ? '#18202B' : acc >= 60 ? '#93A4C1' : 'var(--danger)';
-      const weakChaps = APP.chapterAccuracy(rec).filter(x => x.accuracy < 60 && x.total >= 5);
+      const color = acc >= 80 ? '#1E40AF' : acc >= 60 ? '#93A4C1' : 'var(--danger)';
+      const weakChaps = total > 0 ? APP.chapterAccuracy(rec).filter(x => x.accuracy < 60 && x.total >= 5) : [];
       card.appendChild(APP.el('div', { style: 'margin-bottom:10px' }, [
         APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [
           APP.subjectTag(b),
-          APP.el('span', { class: 'muted', style: 'font-size:12px', text: `${correct}/${total} · 正确率 ${acc}% · 错题 ${wrong}` })
+          APP.el('span', { class: 'muted', style: 'font-size:12px', text: total > 0 ? (correct + '/' + total + ' · 正确率 ' + acc + '% · 错题 ' + wrong) : '近 7 天未刷题' })
         ]),
         APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + acc + '%;background:' + color })])
       ]));
       if (weakChaps.length) {
-        card.appendChild(APP.el('div', { style: 'font-size:11.5px;color:var(--danger);padding-left:4px', text: '薄弱章节：' + weakChaps.map(x => x.chapter + '(' + x.accuracy + '%)').join('、') }));
+        card.appendChild(APP.el('div', { style: 'font-size:11.5px;color:var(--danger);padding-left:4px;margin-top:-4px;margin-bottom:6px', text: '薄弱章节：' + weakChaps.map(x => x.chapter + '(' + x.accuracy + '%)').join('、') }));
       }
     });
-    // 英语掌握情况（来自打卡新词累计 + 复习曲线待复习 List）
-    let wnTotal = 0; for (const d in st.studyLog) wnTotal += Number(st.studyLog[d].wordNew) || 0;
-    const vocabPct = Math.min(100, Math.round(wnTotal / 1800 * 100));
-    const dueW = dueWordReviews().length;
-    const eColor = vocabPct >= 80 ? '#18202B' : vocabPct >= 50 ? '#93A4C1' : 'var(--danger)';
-    card.appendChild(APP.el('div', { style: 'margin-top:10px' }, [
-      APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [
-        APP.subjectTag('英语一'),
-        APP.el('span', { class: 'muted', style: 'font-size:12px', text: '新词 ' + wnTotal + '/1800 · 待复习 ' + dueW + ' 个' })
-      ]),
-      APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + vocabPct + '%;background:' + eColor })])
-    ]));
-    // 政治（未启动也排在最后）
-    const polRec = recent.filter(r => r.subject === '政治');
-    const polTotal = polRec.reduce((s, r) => s + (Number(r.total) || 0), 0);
-    const polCorrect = polRec.reduce((s, r) => s + (Number(r.correct) || 0), 0);
-    const polAcc = polTotal > 0 ? Math.round(polCorrect / polTotal * 100) : 0;
-    card.appendChild(APP.el('div', { style: 'margin-top:10px' }, [
-      APP.el('div', { class: 'spread', style: 'margin-bottom:4px' }, [
-        APP.subjectTag('政治'),
-        APP.el('span', { class: 'muted', style: 'font-size:12px', text: polTotal > 0 ? (polCorrect + '/' + polTotal + ' · 正确率 ' + polAcc + '%') : '未启动' })
-      ]),
-      APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + polAcc + '%;background:var(--muted)' })])
-    ]));
     return card;
   }
 
@@ -5228,15 +5246,16 @@ window.APP = window.APP || {};
       }
     })();
     buildNav();
-    // 侧栏折叠
+    // 侧栏折叠（点击品牌区）
     const sidebar = document.getElementById('sidebar');
     const app = document.getElementById('app');
-    const toggle = APP.el('button', { class: 'nav-item side-toggle', title: '折叠 / 展开侧栏', onclick: () => {
-      const collapsed = app.classList.toggle('nav-collapsed');
-      try { localStorage.setItem('yutian_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
-    } });
-    toggle.appendChild(APP.el('span', { class: 'ico', text: '⟨⟩' }));
-    sidebar.insertBefore(toggle, sidebar.firstChild);
+    const brand = document.getElementById('side-brand');
+    if (brand) {
+      brand.addEventListener('click', () => {
+        const collapsed = app.classList.toggle('nav-collapsed');
+        try { localStorage.setItem('yutian_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+      });
+    }
     // 桌面端始终展开侧边栏；移动端保持抽屉默认关闭
     try {
       if (window.innerWidth > 560) app.classList.remove('nav-collapsed');
