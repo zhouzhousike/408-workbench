@@ -938,10 +938,12 @@ window.APP = window.APP || {};
   // 清空学习记录但保留配置（同步/考试日期）：用于重新记录
   function clearRecords() {
     const keepSettings = state.settings;
-    const keepMeta = state.meta;
-    state = seed();
+    const keepMeta = state.meta || {};
+    const fresh = seed();
+    state = fresh;
     state.settings = keepSettings;
-    state.meta = keepMeta;
+    // 保留用户可能改过的考试日期等，同时保留 backfilled 标记，防止 init 重新补录 8.3 演示数据
+    state.meta = Object.assign({}, fresh.meta, keepMeta, { backfilled: keepMeta.backfilled || {} });
     save();
   }
   function exportJSON() {
@@ -956,6 +958,21 @@ window.APP = window.APP || {};
   APP.store = {
     get: () => state,
     save, load, reset, clearRecords, exportJSON, importJSON, uid
+  };
+
+  // 默写掌握情况 helper（跨视图共享）：不区分拼写/释义错误，统一用 errCount；兼容旧数据
+  APP.errCountOf = function (r) {
+    if (!r) return 0;
+    if (typeof r.errCount === 'number') return r.errCount;
+    return (r.spellingErrors || []).length + (r.meaningErrors || []).length;
+  };
+  APP.correctOf = function (r) {
+    const tot = Number(r.total) || 0;
+    return tot > 0 ? tot - APP.errCountOf(r) : 0;
+  };
+  APP.accPct = function (r) {
+    const tot = Number(r.total) || 0;
+    return tot > 0 ? Math.round((tot - APP.errCountOf(r)) / tot * 100) : null;
   };
 
   // 大小周推算：基准 2026-08-03 = 大周（双休）；支持按周手动覆盖（state.weekTypeOverride[周一]）
@@ -1402,7 +1419,7 @@ APP.views.dashboard = function (container) {
   if (dueWords.length) {
     dueWords.forEach(item => {
       const r = item.r;
-      const errCount = errCountOf(r);
+      const errCount = APP.errCountOf(r);
       const gap = APP.nextReviewGap(Number(r.reviewCount) || 0);
       revCard.appendChild(APP.el('div', { class: 'list-row' }, [
         APP.el('div', { style: 'flex:1' }, [
@@ -1425,7 +1442,7 @@ APP.views.dashboard = function (container) {
       recArr.forEach(r => {
         const cnt = Number(r.reviewCount) || 0;
         const nx = r.nextReview || U.addDays(r.date || today, APP.REVIEW_GAPS[0]);
-        const errCount = errCountOf(r);
+        const errCount = APP.errCountOf(r);
         revCard.appendChild(APP.el('div', { class: 'list-row', style: 'opacity:.85' }, [
           APP.el('div', { style: 'flex:1' }, [
             APP.el('div', { text: (r.listName || ('List · ' + r.date)) + ' · 单词已复习 ' + cnt + ' 次' }),
@@ -1844,7 +1861,7 @@ APP.views.dashboard = function (container) {
     const recs = (st.english && st.english.wordRecords) || {};
     const out = [];
     Object.values(recs).forEach(r => {
-      const errCount = errCountOf(r);
+      const errCount = APP.errCountOf(r);
       if (errCount === 0) return;
       const next = r.nextReview || U.addDays(r.date, 3);
       if (next <= today) out.push(r);
@@ -2674,21 +2691,6 @@ APP.views.english = function (container) {
   }
   function ovStat(label, value) { return APP.el('div', { class: 'stat' }, [APP.el('div', { class: 'label', text: label }), APP.el('div', { class: 'value', style: 'font-size:20px', text: value })]); }
 
-  // 默写掌握情况：不区分拼写/释义错误，统一用 errCount 记录错误数；兼容旧数据（spellingErrors+meaningErrors）
-  function errCountOf(r) {
-    if (!r) return 0;
-    if (typeof r.errCount === 'number') return r.errCount;
-    return (r.spellingErrors || []).length + (r.meaningErrors || []).length;
-  }
-  function correctOf(r) {
-    const tot = Number(r.total) || 0;
-    return tot > 0 ? tot - errCountOf(r) : 0;
-  }
-  function accPct(r) {
-    const tot = Number(r.total) || 0;
-    return tot > 0 ? Math.round((tot - errCountOf(r)) / tot * 100) : null;
-  }
-
   // 单词可视化：柱状图（每日新词）+ 折线图（默写正确率）+ 环形图（累计正确率）
   function buildWordViz(period) {
     const [ty, tm, td] = today.split('-').map(Number);
@@ -2705,7 +2707,7 @@ APP.views.english = function (container) {
       newWords.push(Number(st.studyLog[d]?.wordNew) || 0);
       const rec = (eng.wordRecords || {})[d];
       if (rec && rec.total > 0) {
-        const correct = correctOf(rec);
+        const correct = APP.correctOf(rec);
         accuracies.push(Math.round(correct / rec.total * 100));
         totalRecs++;
         totalCorrect += correct;
@@ -2842,9 +2844,9 @@ APP.views.english = function (container) {
       ])
     ]);
     if (rec) {
-      const correct = correctOf(rec);
+      const correct = APP.correctOf(rec);
       const accuracy = rec.total > 0 ? Math.round(correct / rec.total * 100) : 0;
-      const err = errCountOf(rec);
+      const err = APP.errCountOf(rec);
       recCard.appendChild(APP.el('div', { class: 'grid grid-3' }, [
         estStat('总词数', rec.total),
         estStat('错误数', err),
@@ -2872,8 +2874,8 @@ APP.views.english = function (container) {
     });
     const passOf = (r) => passRank.get((r.date || '') + '|' + (r.listName || r.date || '')) || '一刷';
     const sumWords = allRecs.reduce((s, r) => s + (Number(r.total) || 0), 0);
-    const recAcc = (r) => accPct(r);
-    const groupAcc = (arr) => { const tot = arr.reduce((s, r) => s + (Number(r.total) || 0), 0); const err = arr.reduce((s, r) => s + errCountOf(r), 0); return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
+    const recAcc = (r) => APP.accPct(r);
+    const groupAcc = (arr) => { const tot = arr.reduce((s, r) => s + (Number(r.total) || 0), 0); const err = arr.reduce((s, r) => s + APP.errCountOf(r), 0); return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
     const passes = passOrder.filter(p => allRecs.some(r => passOf(r) === p));
     const reviewCard = APP.el('div', { class: 'card', style: 'margin-top:14px' }, [
       APP.el('div', { class: 'spread' }, [
@@ -2917,7 +2919,7 @@ APP.views.english = function (container) {
       const maxW = Math.max.apply(null, allRecs.map(r => Number(r.total) || 0));
       const rows = allRecs.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(r => {
         const tot = Number(r.total) || 0;
-        const err = errCountOf(r);
+        const err = APP.errCountOf(r);
         const acc = recAcc(r);
         const w = maxW > 0 ? Math.round(tot / maxW * 100) : 0;
         const color = acc >= 85 ? 'var(--accent)' : acc >= 65 ? '#B1B2AE' : 'var(--danger)';
