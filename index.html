@@ -5186,6 +5186,15 @@ APP.views.analytics = function (container) {
     }).length;
   }
 
+  // 仅按「学习时长」口径取最早打卡日（不含单词默写/刷题，避免清空学习记录后仍被 wordRecords 的演示日期拉回 8/3）
+  function earliestStudyDate() {
+    const dates = Object.keys(st.studyLog || {}).filter(d => {
+      const l = st.studyLog[d] || {};
+      return (Number(l.minutes) || 0) > 0 || (l.subjectMin && Object.values(l.subjectMin).some(v => Number(v) > 0));
+    });
+    return dates.length ? dates.sort()[0] : today;
+  }
+
   // 1) 各科时长堆叠柱状图（本周/本月按日展示，全部按周展示）
   function weeklyStackedBar() {
     const isAll = daPeriod === 'all';
@@ -5195,8 +5204,8 @@ APP.views.analytics = function (container) {
     const smKeys = { '数学一': 'math', '408': 'cs', '英语一': 'eng', '政治': 'pol' };
     let labels = [], dataArr = [], any = false;
     if (isAll) {
-      // 全部：从最早记录所在周一开始，按周聚合
-      let d = mondayOf(parseD(earliestDataDate()));
+      // 全部：从最早学习时长所在周一开始，按周聚合（仅取 studyLog，不含单词默写/刷题的演示日期）
+      let d = mondayOf(parseD(earliestStudyDate()));
       const end = parseD(today);
       while (d <= end) {
         const sums = { '数学一': 0, '408': 0, '英语一': 0, '政治': 0 };
@@ -5206,7 +5215,8 @@ APP.views.analytics = function (container) {
           subs.forEach(s => { const v = Number(sm[smKeys[s]]) || 0; sums[s] += v; if (v > 0) any = true; });
         }
         dataArr.push(sums);
-        labels.push((d.getMonth() + 1) + '/' + d.getDate());
+        const e = new Date(d); e.setDate(d.getDate() + 6);
+        labels.push((d.getMonth() + 1) + '/' + d.getDate() + '-' + (e.getMonth() + 1) + '/' + e.getDate());
         d.setDate(d.getDate() + 7);
       }
     } else {
@@ -5227,14 +5237,6 @@ APP.views.analytics = function (container) {
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const yOf = h => padT + (1 - h / scaleMax) * plotH;
     const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, style: 'width:100%;height:auto;display:block' });
-    // 目标线 41h / 33h
-    [41, 33].forEach(g => {
-      if (g <= scaleMax) {
-        const y = yOf(g);
-        svg.appendChild(svgEl('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#B14B5E', 'stroke-dasharray': '4 4', 'stroke-width': 1, opacity: .7 }));
-        svg.appendChild(svgEl('text', { x: W - padR, y: y - 3, 'text-anchor': 'end', 'font-size': 10, fill: '#B14B5E' }, [svgTxt('目标' + g + 'h')]));
-      }
-    });
     for (let g = 0; g <= scaleMax; g += 10) {
       const y = yOf(g);
       svg.appendChild(svgEl('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#E3E5E1', 'stroke-width': 1 }));
