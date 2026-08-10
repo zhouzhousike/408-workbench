@@ -989,6 +989,29 @@ window.APP = window.APP || {};
     return Object.values(map).map(x => ({ ...x, accuracy: x.total > 0 ? Math.round(x.correct / x.total * 100) : 0 }));
   };
 
+  // 刷题题量 / 正确率统一数据源：dailyPractice（「错题复盘」页）为唯一录入入口，
+  // studyLog 里的 mathDone/csDone 等旧字段仅作兜底兼容（取「刷题记录」与旧值中的较大者，避免老数据丢失）。
+  APP.practiceDoneOnDate = function (date, subject) {
+    const stt = APP.store.get();
+    const pd = (stt.dailyPractice || []).filter(r => r.date === date && r.subject === subject)
+      .reduce((s, r) => s + (Number(r.total) || 0), 0);
+    const key = subject === '数学一' ? 'mathDone' : 'csDone';
+    const sd = Number((stt.studyLog[date] || {})[key]) || 0;
+    return Math.max(pd, sd);
+  };
+  APP.practiceWrongOnDate = function (date, subject) {
+    const stt = APP.store.get();
+    const wr = (stt.dailyPractice || []).filter(r => r.date === date && r.subject === subject)
+      .reduce((s, r) => s + ((Number(r.total) || 0) - (Number(r.correct) || 0)), 0);
+    const key = subject === '数学一' ? 'mathWrong' : 'csWrong';
+    const sd = Number((stt.studyLog[date] || {})[key]) || 0;
+    return Math.max(wr, sd);
+  };
+  APP.practiceAccOnDate = function (date, subject) {
+    const done = APP.practiceDoneOnDate(date, subject), wr = APP.practiceWrongOnDate(date, subject);
+    return done > 0 ? Math.round((done - wr) / done * 100) : null;
+  };
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -1126,6 +1149,7 @@ window.APP = window.APP || {};
     Object.keys(st.math).forEach(course => {
       (st.math[course] || []).forEach(ch => {
         if (!ch.targetWeek) return;
+        if (ch.lectured) return; // 已通过「听课」记录的章节，进度由听课派生，不被周次粗判覆盖
         const m = (ch.targetWeek.match(/W(\d+)/) || [])[1];
         if (!m) return;
         const n = parseInt(m, 10);
@@ -1673,16 +1697,18 @@ APP.views.dashboard = function (container) {
   function buildCheckinCard() {
     const log = st.studyLog[today] || {};
     const sm = log.subjectMin || {};
-    const doneSome = () => APP.wordNewOnDate(today) > 0 || Number(log.wordOld) > 0 || Number(log.mathDone) > 0 || Number(log.csDone) > 0;
+    const doneSome = () => APP.wordNewOnDate(today) > 0 || Number(log.wordOld) > 0 || APP.practiceDoneOnDate(today, '数学一') > 0 || APP.practiceDoneOnDate(today, '408') > 0;
     const checked = log && (Number(log.minutes) > 0 || (sm.math || sm.cs || sm.eng || sm.pol) || doneSome());
     const card = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '今日打卡', html: '' })]);
     if (checked) {
       const wn = APP.wordNewOnDate(today), wo = Number(log.wordOld) || 0;
-      const md = Number(log.mathDone) || 0, cd = Number(log.csDone) || 0;
+      const md = APP.practiceDoneOnDate(today, '数学一'), cd = APP.practiceDoneOnDate(today, '408');
+      const maw = APP.practiceWrongOnDate(today, '数学一'), caw = APP.practiceWrongOnDate(today, '408');
+      const mAcc = md > 0 ? (md - maw) / md * 100 : null, cAcc = cd > 0 ? (cd - caw) / cd * 100 : null;
       card.appendChild(APP.el('div', { class: 'row', style: 'gap:8px;flex-wrap:wrap;margin-bottom:8px' }, [
         subjPill('数学一', sm.math), subjPill('专业课', sm.cs), subjPill('英语一', sm.eng), subjPill('政治', sm.pol)
       ]));
-      card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '单词：新 ' + wn + ' / 旧 ' + wo + '　做题：数学 ' + md + '题 · 专业课 ' + cd + '题' }));
+      card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '单词：新 ' + wn + ' / 旧 ' + wo + '　做题：数学 ' + md + '题' + (mAcc != null ? '（正确率' + Math.round(mAcc) + '%）' : '') + ' · 专业课 ' + cd + '题' + (cAcc != null ? '（正确率' + Math.round(cAcc) + '%）' : '') }));
       card.appendChild(APP.el('div', { class: 'row', style: 'margin-top:10px' }, [
         APP.el('button', { class: 'btn primary', text: '修改打卡', onclick: () => APP._navigate('diary') })
       ]));
@@ -1700,7 +1726,7 @@ APP.views.dashboard = function (container) {
     while (d <= today) {
       const l = st.studyLog[d] || {};
       const m = l.subjectMin || {};
-      if (Number(l.minutes) > 0 || (m.math || m.cs || m.eng || m.pol) || APP.wordNewOnDate(d) > 0 || Number(l.wordOld) > 0 || Number(l.mathDone) > 0 || Number(l.csDone) > 0) wkChecked++;
+      if (Number(l.minutes) > 0 || (m.math || m.cs || m.eng || m.pol) || APP.wordNewOnDate(d) > 0 || Number(l.wordOld) > 0 || APP.practiceDoneOnDate(d, '数学一') > 0 || APP.practiceDoneOnDate(d, '408') > 0) wkChecked++;
       d = U.addDays(d, 1);
     }
     card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px', text: '本周已打卡 ' + wkChecked + ' 天' + (Number(log.minutes) > 0 ? ' · 今日 ' + Number(log.minutes) + ' min' : '') }));
@@ -1894,7 +1920,7 @@ APP.views.dashboard = function (container) {
   function studied(d) {
     const l = st.studyLog[d] || {};
     const sm = l.subjectMin || {};
-    return Number(l.minutes) > 0 || Number(sm.math) > 0 || Number(sm.cs) > 0 || Number(sm.eng) > 0 || Number(sm.pol) > 0 || APP.wordNewOnDate(d) > 0 || Number(l.wordOld) > 0 || Number(l.mathDone) > 0 || Number(l.csDone) > 0;
+    return Number(l.minutes) > 0 || Number(sm.math) > 0 || Number(sm.cs) > 0 || Number(sm.eng) > 0 || Number(sm.pol) > 0 || APP.wordNewOnDate(d) > 0 || Number(l.wordOld) > 0 || APP.practiceDoneOnDate(d, '数学一') > 0 || APP.practiceDoneOnDate(d, '408') > 0;
   }
   // 每周习惯打卡（数据结构 / 高数 / 单词 / 长难句 / 语法）
   // 自动派生为主：数据结构→专业课、高数→数学、单词→英语 三项随当日「学习打卡」时长自动点亮，无需重复点；
@@ -2444,7 +2470,7 @@ APP.views.knowledge = function (container) {
           if (p.book) bindings.push('书');
           if (relE) bindings.push('真题' + relE);
           table.appendChild(APP.el('tr', {}, [
-            APP.el('td', { html: '', style: 'font-weight:600', text: p.name }),
+            APP.el('td', { html: '', style: 'font-weight:600', text: (p.learned ? '🎧 ' : '') + p.name }),
             APP.el('td', { text: p.chapter }),
             APP.el('td', {}, [APP.importanceTag(p.importance)]),
             APP.el('td', {}, [APP.el('span', { style: 'cursor:pointer', title: '点击修改掌握等级', onclick: () => setMastery(p) }, [APP.masteryDots(p.mastery), ' ' + APP.masteryLabel(p.mastery)])]),
@@ -2560,7 +2586,7 @@ APP.views.math = function (container) {
       onclick: () => { APP._activeMathCh = (APP._activeMathCh === ch.id ? null : ch.id); APP.refresh(); }
     }, [
       APP.el('div', { class: 'spread', style: 'margin-bottom:6px' }, [
-        APP.el('b', { style: 'font-size:13px', text: ch.chapter }),
+        APP.el('b', { style: 'font-size:13px', text: (ch.lectured ? '🎧 ' : '') + ch.chapter }),
         APP.el('span', { class: 'muted', style: 'font-size:11px', text: mastery + '%' })
       ]),
       APP.el('div', { class: 'bar', style: 'height:6px;margin-bottom:6px' }, [APP.el('i', { style: 'width:' + (ch.progress || 0) + '%' })]),
@@ -3564,6 +3590,12 @@ APP.views.wrongq = function (container) {
   if (tab === 'practices') renderPractices();
   else renderWrongBank();
 
+  // 从「学习打卡」页跳转过来并带预填日期时，自动打开刷题录入（统一数据源，不在打卡页重复填）
+  if (APP._wqOpenPracticeDate) {
+    const pd = APP._wqOpenPracticeDate; APP._wqOpenPracticeDate = null;
+    editPractice(null, pd);
+  }
+
   function stat(label, value) { return APP.el('div', { class: 'stat' }, [APP.el('div', { class: 'label', text: label }), APP.el('div', { class: 'value', text: value })]); }
 
   function renderPractices() {
@@ -3712,9 +3744,10 @@ ${wrongItems.map((it, i) => `${i + 1}. 第 ${it.number || (i + 1)} 题：${it.te
     ]);
   }
 
-  function editPractice(r) {
+  function editPractice(r, prefillDate) {
     const isNew = !r;
-    const o = r || { id: APP.uid(), date: today, subject: APP.BOARDS[1], source: '', chapter: '', total: 0, correct: 0, wrongItems: [], note: '', pass: '一刷' };
+    const o = r || { id: APP.uid(), date: prefillDate || today, subject: APP.BOARDS[1], source: '', chapter: '', total: 0, correct: 0, wrongItems: [], note: '', pass: '一刷' };
+    o.date = prefillDate || o.date || today;
     o.wrongItems = (o.wrongItems || []).slice();
     const fDate = APP.el('input', { type: 'date', value: o.date || today });
     const fSub = APP.el('select', {}, APP.BOARDS.map(s => APP.el('option', { value: s, selected: s === o.subject ? 'selected' : false, text: s })));
@@ -4051,16 +4084,12 @@ APP.views.diary = function (container) {
   const fMin = APP.el('input', { type: 'number', value: log.minutes || sumMin || 0, placeholder: 'min（自动合计，可改）' });
   const fWordNew = APP.el('input', { type: 'number', value: log.wordNew || 0, placeholder: '新词' });
   const fWordOld = APP.el('input', { type: 'number', value: log.wordOld || 0, placeholder: '复习旧词' });
-  const fMathDone = APP.el('input', { type: 'number', value: log.mathDone || 0, placeholder: '题量' });
-  const fMathWrong = APP.el('input', { type: 'number', value: log.mathWrong || 0, placeholder: '错数' });
-  const fCsDone = APP.el('input', { type: 'number', value: log.csDone || 0, placeholder: '题量' });
-  const fCsWrong = APP.el('input', { type: 'number', value: log.csWrong || 0, placeholder: '错数' });
   const fNote = APP.el('input', { value: log.note || '', placeholder: '今天卡在哪 / 什么没完成' });
   const fFirst = APP.el('input', { value: log.firstTask || '', placeholder: '明天第一件要做的正事' });
   const fGain = APP.el('textarea', { value: log.gains || '', placeholder: '今日收获', style: 'min-height:60px' });
   const fProb = APP.el('textarea', { value: log.problems || '', placeholder: '遇到的问题', style: 'min-height:60px' });
   const fPlan = APP.el('textarea', { value: log.planTomorrow || '', placeholder: '明日计划', style: 'min-height:60px' });
-  [fMath, fCs, fEng, fPol, fMin, fWordNew, fWordOld, fMathDone, fMathWrong, fCsDone, fCsWrong, fNote, fFirst, fGain, fProb, fPlan].forEach(n => n.addEventListener('change', save));
+  [fMath, fCs, fEng, fPol, fMin, fWordNew, fWordOld, fNote, fFirst, fGain, fProb, fPlan].forEach(n => n.addEventListener('change', save));
 
   function save() {
     const sm2 = {
@@ -4072,8 +4101,6 @@ APP.views.diary = function (container) {
     const next = Object.assign({}, log, {
       minutes: minutes, subjectMin: sm2,
       wordNew: Number(fWordNew.value) || 0, wordOld: Number(fWordOld.value) || 0,
-      mathDone: Number(fMathDone.value) || 0, mathWrong: Number(fMathWrong.value) || 0,
-      csDone: Number(fCsDone.value) || 0, csWrong: Number(fCsWrong.value) || 0,
       weekType: weekType, note: fNote.value, energy: energy, firstTask: fFirst.value,
       gains: fGain.value, problems: fProb.value, planTomorrow: fPlan.value
     });
@@ -4155,11 +4182,20 @@ APP.views.diary = function (container) {
     APP.el('div', { class: 'muted', style: 'font-size:12px;color:var(--accent);margin-bottom:6px', text: '今日目标新词 ' + (APP.wordTarget ? APP.wordTarget(date) : '—') + ' 个' }),
     APP.el('div', { class: 'grid grid-2', style: 'margin-top:8px' }, [APP.field('今日新词', fWordNew), APP.field('今日复习旧词', fWordOld)]),
     APP.el('div', { class: 'hr' }),
-    APP.el('div', { class: 'sub', text: '做题（题量 / 错数）' }),
-    APP.el('div', { class: 'grid grid-2', style: 'margin-top:8px' }, [
-      APP.el('div', { class: 'grid grid-2', style: 'gap:8px' }, [APP.field('数学题量', fMathDone), APP.field('数学错数', fMathWrong)]),
-      APP.el('div', { class: 'grid grid-2', style: 'gap:8px' }, [APP.field('专业课题量', fCsDone), APP.field('专业课错数', fCsWrong)])
-    ]),
+    APP.el('div', { class: 'sub', text: '做题（题量 / 错数 · 统一在「错题复盘」页录入，此处自动汇总）' }),
+    (function () {
+      const md = APP.practiceDoneOnDate(date, '数学一'), mw = APP.practiceWrongOnDate(date, '数学一');
+      const cd = APP.practiceDoneOnDate(date, '408'), cw = APP.practiceWrongOnDate(date, '408');
+      const mAcc = md > 0 ? Math.round((md - mw) / md * 100) : null, cAcc = cd > 0 ? Math.round((cd - cw) / cd * 100) : null;
+      return APP.el('div', { style: 'margin-top:8px' }, [
+        APP.el('div', { class: 'row', style: 'gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2)' }, [
+          APP.el('span', { text: '数学一：' + md + '题' + (mAcc != null ? '（正确率' + mAcc + '%）' : '（无记录）') }),
+          APP.el('span', { text: '专业课：' + cd + '题' + (cAcc != null ? '（正确率' + cAcc + '%）' : '（无记录）') })
+        ]),
+        APP.el('button', { class: 'btn sm primary', style: 'margin-top:8px', text: '+ 录入 / 修改刷题', onclick: () => { APP._wqOpenPracticeDate = date; APP._navigate('wq'); } })
+      ]);
+    })(),
+    APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:6px', text: '在「错题复盘」页录入每日刷题（含章节 / 来源 / 错题），正确率与题量会自动同步到这里、数据分析、正确率曲线。' }),
     APP.el('div', { class: 'hr' }),
     APP.el('div', { class: 'sub', text: '大小周标记（默认按本周推算）' }),
     APP.el('div', { style: 'margin-top:8px' }, wtChips),
@@ -4171,6 +4207,110 @@ APP.views.diary = function (container) {
     ])
   ]);
   container.appendChild(checkin);
+
+  // ---------- 今日听课 card（统一录入听课章节，自动驱动数学/408 进度）----------
+  const lecCard = APP.el('div', { class: 'card' }, [
+    APP.el('div', { class: 'spread' }, [
+      APP.el('h3', { text: '今日听课 · ' + date, html: '' }),
+      APP.el('button', { class: 'btn sm primary', text: '+ 听课', onclick: () => editLecture(null) })
+    ]),
+    APP.el('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px', text: '在这里统一填写当天听的章节（数学 / 408 / 英语 / 政治），数学章节进度与 408 知识点「已听课」会自动更新。' })
+  ]);
+  st.lectures = st.lectures || [];
+  const todaysLec = st.lectures.filter(r => r.date === date);
+  if (!todaysLec.length) {
+    lecCard.appendChild(APP.el('div', { class: 'empty', text: '今天还没记录听课内容' }));
+  } else {
+    todaysLec.forEach(r => {
+      lecCard.appendChild(APP.el('div', { class: 'list-row' }, [
+        APP.el('div', { style: 'flex:1' }, [
+          APP.el('div', {}, [APP.subjectTag(r.subject), ' ', APP.el('b', { text: (r.course ? r.course + ' · ' : '') + (r.chapter || '（未填章节）') })]),
+          r.note ? APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:2px', text: r.note }) : null
+        ]),
+        APP.el('div', { class: 'row', style: 'gap:8px' }, [
+          APP.el('span', { class: 'pill sm', style: 'background:var(--surface-2);color:var(--text-2)', text: r.pass || '一刷' }),
+          APP.el('button', { class: 'btn sm ghost', text: '编辑', onclick: () => editLecture(r) }),
+          APP.el('button', { class: 'btn sm ghost', text: '删除', onclick: () => { if (confirm('删除这条听课记录？')) { st.lectures = st.lectures.filter(x => x.id !== r.id); APP.store.save(); APP.refresh(); } } })
+        ])
+      ]));
+    });
+  }
+  container.appendChild(lecCard);
+
+  function editLecture(r) {
+    const isNew = !r;
+    const o = r || { id: APP.uid(), date: date, subject: '数学一', course: APP.MATH_COURSES[0], chapter: '', pass: '一刷', note: '' };
+    o.subject = o.subject || '数学一';
+    const fDate = APP.el('input', { type: 'date', value: o.date || date });
+    const fSub = APP.el('select', {}, ['数学一', '408', '英语一', '政治'].map(s => APP.el('option', { value: s, selected: s === o.subject ? 'selected' : false, text: s })));
+    const courseBox = APP.el('div', {});
+    const chBox = APP.el('div', {});
+    const fPass = APP.el('select', {}, ['一刷', '二刷'].map(p => APP.el('option', { value: p, selected: p === o.pass ? 'selected' : false, text: p })));
+    const fNote = APP.el('textarea', { value: o.note || '', placeholder: '备注（可选）', style: 'min-height:50px' });
+
+    function fillCourse() {
+      APP.clear(courseBox);
+      if (o.subject === '数学一') {
+        courseBox.appendChild(APP.field('科目', APP.el('select', {}, APP.MATH_COURSES.map(c => APP.el('option', { value: c, selected: c === o.course ? 'selected' : false, text: c })))));
+        o.course = o.course || APP.MATH_COURSES[0];
+      } else if (o.subject === '408') {
+        courseBox.appendChild(APP.field('科目', APP.el('select', {}, APP.KNOWLEDGE_SUBJECTS.map(c => APP.el('option', { value: c, selected: c === o.course ? 'selected' : false, text: c })))));
+        o.course = o.course || APP.KNOWLEDGE_SUBJECTS[0];
+      } else {
+        courseBox.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px', text: '（该科目无需选择子科目）' }));
+        o.course = '';
+      }
+    }
+    function fillChapter() {
+      APP.clear(chBox);
+      let opts = [];
+      if (o.subject === '数学一') opts = (st.math[o.course] || []).map(c => c.chapter);
+      else if (o.subject === '408') {
+        const set = {}; (st.knowledge[o.course] || []).forEach(p => { if (p.chapter) set[p.chapter] = 1; });
+        opts = Object.keys(set);
+      }
+      if (opts.length) {
+        const sel = APP.el('select', {}, [APP.el('option', { value: '', text: '— 选择章节 —' })].concat(opts.map(c => APP.el('option', { value: c, selected: c === o.chapter ? 'selected' : false, text: c }))));
+        sel.addEventListener('change', e => { o.chapter = e.target.value; });
+        chBox.appendChild(APP.field('章节（从目录选择）', sel));
+      }
+      const fCh = APP.el('input', { value: o.chapter || '', placeholder: '如：第1讲 函数极限与连续 / 数据结构·线性表' });
+      fCh.addEventListener('change', e => { o.chapter = e.target.value.trim(); });
+      chBox.appendChild(APP.field('章节 / 内容（文本）', fCh));
+    }
+    fSub.addEventListener('change', e => { o.subject = e.target.value; o.chapter = ''; fillCourse(); fillChapter(); });
+    fillCourse(); fillChapter();
+
+    const body = APP.el('div', {}, [
+      APP.el('div', { class: 'grid grid-2' }, [APP.field('日期', fDate), APP.field('科目', fSub)]),
+      courseBox,
+      chBox,
+      APP.el('div', { class: 'grid grid-2', style: 'margin-top:8px' }, [APP.field('第几遍', fPass), APP.field('备注', fNote)])
+    ]);
+    APP.openModal(isNew ? '录入听课' : '编辑听课', body, [
+      APP.el('button', { class: 'btn', text: '取消', onclick: APP.closeModal }),
+      isNew ? null : APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { if (confirm('确认删除？')) { st.lectures = st.lectures.filter(x => x.id !== o.id); APP.store.save(); APP.closeModal(); APP.refresh(); } } }),
+      APP.el('button', { class: 'btn primary', text: '保存', onclick: () => {
+        o.date = fDate.value || date;
+        o.subject = fSub.value;
+        o.pass = fPass.value;
+        o.note = fNote.value.trim();
+        if (isNew) st.lectures.push(o);
+        if (o.subject === '数学一' && o.chapter) {
+          (st.math[o.course] || []).forEach(ch => {
+            if (ch.chapter === o.chapter) {
+              ch.lectured = true;
+              if (Number(ch.progress || 0) !== 100) { ch.progressLog = ch.progressLog || []; ch.progressLog.push({ date: U.todayStr(), value: 100 }); if (ch.progressLog.length > 20) ch.progressLog = ch.progressLog.slice(-20); }
+              ch.progress = 100;
+            }
+          });
+        } else if (o.subject === '408' && o.chapter) {
+          (st.knowledge[o.course] || []).forEach(p => { if (p.chapter === o.chapter) p.learned = true; });
+        }
+        APP.store.save(); APP.closeModal(); APP.refresh();
+      } })
+    ]);
+  }
 
   // ---------- 日志补充 card（保留旧字段）----------
   const logCard = APP.el('div', { class: 'card' }, [
@@ -4218,8 +4358,8 @@ APP.views.diary = function (container) {
         res.totalMin += Number(l.minutes) || 0;
         if (Number(l.minutes) > 0) res.checkedDays++;
         res.wordNew += Number(l.wordNew) || 0; res.wordOld += Number(l.wordOld) || 0;
-        res.mathDone += Number(l.mathDone) || 0; res.mathWrong += Number(l.mathWrong) || 0;
-        res.csDone += Number(l.csDone) || 0; res.csWrong += Number(l.csWrong) || 0;
+        res.mathDone += APP.practiceDoneOnDate(d, '数学一'); res.mathWrong += APP.practiceWrongOnDate(d, '数学一');
+        res.csDone += APP.practiceDoneOnDate(d, '408'); res.csWrong += APP.practiceWrongOnDate(d, '408');
         if (l.gains && l.gains.trim()) res.gains.push(d + '：' + l.gains.trim());
         if (l.problems && l.problems.trim()) res.probs.push(d + '：' + l.problems.trim());
       }
@@ -5091,8 +5231,8 @@ APP.views.analytics = function (container) {
     const days = []; let any = false;
     periodDays(daPeriod).forEach(d => {
       const log = st.studyLog[d] || {};
-      const md = Number(log.mathDone) || 0, mw = Number(log.mathWrong) || 0;
-      const cd = Number(log.csDone) || 0, cw = Number(log.csWrong) || 0;
+      const md = APP.practiceDoneOnDate(d, '数学一'), mw = APP.practiceWrongOnDate(d, '数学一');
+      const cd = APP.practiceDoneOnDate(d, '408'), cw = APP.practiceWrongOnDate(d, '408');
       const mAcc = md > 0 ? (md - mw) / md * 100 : null;
       const cAcc = cd > 0 ? (cd - cw) / cd * 100 : null;
       if (mAcc != null || cAcc != null) any = true;
