@@ -518,8 +518,10 @@ window.APP = window.APP || {};
       '2027年9月启动：徐涛强化课（马原+毛中特1.5倍速）+ 肖1000对应章节，之前不动'
     ]
   };
-  // 间隔复习节奏：第1~6次复习后分别隔 1/2/4/7/15/30 天（记忆曲线）
-  APP.REVIEW_GAPS = [1, 2, 4, 7, 15, 30];
+  // 错题间隔复习节奏（数学/408 错题专用，与单词 List 曲线区分）：
+  // 考虑到复习时间有限，采用更松弛的节奏——第1~4次复习后分别隔 2/7/15/30 天。
+  // 相比单词 2/4/7/15/30 天节点更宽松（去掉中间 4 天那次），避免频繁打断。
+  APP.REVIEW_GAPS = [2, 7, 15, 30];
   APP.nextReviewGap = function (reviewCount) {
     if (!reviewCount || reviewCount < 1) return APP.REVIEW_GAPS[0];
     return APP.REVIEW_GAPS[Math.min(reviewCount, APP.REVIEW_GAPS.length) - 1];
@@ -5291,10 +5293,36 @@ APP.views.analytics = function (container) {
 window.APP = window.APP || {};
 (function (APP) {
   let s = null;
+  const LS_KEY = 'pomo_state_v1';
+  function loadState() {
+    try { const raw = localStorage.getItem(LS_KEY); if (!raw) return null; const o = JSON.parse(raw); if (!o || typeof o !== 'object') return null; return o; } catch (e) { return null; }
+  }
+  function persist() {
+    if (!s) return;
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ mode: s.mode, durMin: s.durMin, running: s.running, startTs: s.startTs, baseRemaining: s.baseRemaining, baseElapsed: s.baseElapsed, recordedSec: s.recordedSec })); } catch (e) {}
+  }
   function ensure() {
     if (s) return s;
-    s = { mode: 'down', durMin: 25, remaining: 25 * 60, elapsed: 0, running: false, iv: null };
+    const saved = loadState();
+    if (saved) {
+      s = Object.assign({ mode: 'down', durMin: 25, running: false, startTs: 0, baseRemaining: 25 * 60, baseElapsed: 0, recordedSec: 0 }, saved);
+      if (s.running && !s.startTs) s.running = false; // 防御：运行态但无起点时间戳
+    } else {
+      s = { mode: 'down', durMin: 25, running: false, startTs: 0, baseRemaining: 25 * 60, baseElapsed: 0, recordedSec: 0 };
+    }
     return s;
+  }
+  // 基于真实时间戳计算（即使页面被节流/切后台也准确，刷新后可恢复）
+  function curRemaining() {
+    if (!s.running) return s.baseRemaining;
+    const delta = Math.floor((Date.now() - s.startTs) / 1000);
+    const r = s.baseRemaining - delta;
+    return r < 0 ? 0 : r;
+  }
+  function curElapsed() {
+    if (!s.running) return s.baseElapsed;
+    const delta = Math.floor((Date.now() - s.startTs) / 1000);
+    return s.baseElapsed + delta;
   }
   function fmt(sec) {
     sec = Math.max(0, Math.round(sec));
@@ -5302,7 +5330,7 @@ window.APP = window.APP || {};
     return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
   }
   function elapsedSec() {
-    return s.mode === 'down' ? (s.durMin * 60 - s.remaining) : s.elapsed;
+    return s.mode === 'down' ? (s.durMin * 60 - curRemaining()) : curElapsed();
   }
   function incompleteTasks() {
     const st = APP.store.get();
@@ -5334,7 +5362,7 @@ window.APP = window.APP || {};
     ]);
 
     const timeWrap = APP.el('div', { class: 'pomo-time-wrap' });
-    timeDisplay = APP.el('div', { id: 'pomo-time', class: 'pomo-time', text: fmt(s.remaining), title: '点击修改时长（分钟）', onclick: () => { if (!s.running) startEditDur(); } });
+    timeDisplay = APP.el('div', { id: 'pomo-time', class: 'pomo-time', text: fmt(curRemaining()), title: '点击修改时长（分钟）', onclick: () => { if (!s.running) startEditDur(); } });
     durInput = APP.el('input', { id: 'pomo-dur-input', class: 'pomo-time-input', type: 'number', value: s.durMin, min: '1', max: '180' });
     durInput.addEventListener('blur', finishEditDur);
     durInput.addEventListener('keydown', e => { if (e.key === 'Enter') finishEditDur(e); });
@@ -5349,7 +5377,7 @@ window.APP = window.APP || {};
       APP.el('button', { id: 'pomo-toggle', class: 'btn primary', text: '开始', onclick: () => toggle() }),
       APP.el('button', { id: 'pomo-reset', class: 'btn', text: '重置', onclick: () => reset() })
     ]);
-    const hint = APP.el('div', { class: 'pomo-hint', text: '停止时自动计入今日学习时长与该任务' });
+    const hint = APP.el('div', { class: 'pomo-hint', text: '切到别的软件 / 刷新页面也会持续计时，停止或倒计时结束自动计入今日学习时长与该任务' });
 
     body.appendChild(modeRow);
     body.appendChild(timeWrap);
@@ -5405,7 +5433,7 @@ window.APP = window.APP || {};
 
   function updateView() {
     if (!refs) return;
-    const t = s.mode === 'down' ? s.remaining : s.elapsed;
+    const t = s.mode === 'down' ? curRemaining() : curElapsed();
     if (timeDisplay && durInput && durInput.style.display !== 'block') timeDisplay.textContent = fmt(t);
     refs.root.querySelectorAll('.pomo-mode').forEach(b => b.classList.toggle('on', b.getAttribute('data-m') === s.mode));
     const tog = document.getElementById('pomo-toggle');
@@ -5414,59 +5442,83 @@ window.APP = window.APP || {};
 
   function start() {
     if (s.running) return;
-    if (s.mode === 'down' && s.remaining <= 0) reset();
+    if (s.mode === 'down' && curRemaining() <= 0) s.baseRemaining = s.durMin * 60;
     s.running = true;
+    s.startTs = Date.now();
+    s.baseRemaining = curRemaining(); // 锁定本次运行的起点剩余
+    s.baseElapsed = curElapsed();     // 锁定本次运行的起点已用
+    persist();
     s.iv = setInterval(tick, 1000);
     updateView();
   }
   function pause() {
+    if (!s.running && s.startTs === 0) return;
+    s.baseRemaining = curRemaining();
+    s.baseElapsed = curElapsed();
     s.running = false;
+    s.startTs = 0;
     if (s.iv) { clearInterval(s.iv); s.iv = null; }
+    persist();
     record();
     updateView();
   }
   function toggle() { s.running ? pause() : start(); }
   function reset() {
-    if (s.running) record();
+    if (s.running) { s.baseRemaining = curRemaining(); s.baseElapsed = curElapsed(); }
+    record();
     s.running = false;
+    s.startTs = 0;
     if (s.iv) { clearInterval(s.iv); s.iv = null; }
-    if (s.mode === 'down') s.remaining = s.durMin * 60; else s.elapsed = 0;
+    if (s.mode === 'down') s.baseRemaining = s.durMin * 60; else s.baseElapsed = 0;
+    s.recordedSec = 0;
+    persist();
     updateView();
     APP.toast('计时已重置');
   }
   function tick() {
     if (s.mode === 'down') {
-      s.remaining--;
-      if (s.remaining <= 0) { s.remaining = 0; updateView(); pause(); APP.toast('倒计时结束，已记录学习时长'); return; }
-    } else {
-      s.elapsed++;
+      if (curRemaining() <= 0) {
+        s.baseRemaining = 0;
+        pause(); // 落定 + 记录 + 持久化
+        APP.toast('倒计时结束，已记录学习时长');
+        return;
+      }
     }
-    updateView();
+    updateView(); // up 模式无上限，仅更新显示
   }
   function setMode(m) {
-    s.mode = m; reset();
+    if (s.running) { s.baseRemaining = curRemaining(); s.baseElapsed = curElapsed(); s.running = false; s.startTs = 0; if (s.iv) { clearInterval(s.iv); s.iv = null; } record(); }
+    s.mode = m;
+    if (s.mode === 'down') s.baseRemaining = s.durMin * 60; else s.baseElapsed = 0;
+    s.recordedSec = 0;
+    persist();
+    updateView();
   }
   function setDur(v) {
     s.durMin = Math.min(180, Math.max(1, v || 25));
-    if (s.mode === 'down' && !s.running) s.remaining = s.durMin * 60;
+    if (s.mode === 'down' && !s.running) s.baseRemaining = s.durMin * 60;
+    persist();
     updateView();
   }
+  // 增量记账：每次暂停/重置只记录「自上次记录以来」的增量，避免续计重复累加
   function record() {
     const sec = elapsedSec();
-    const min = Math.round(sec / 60);
-    if (min <= 0) return;
+    const deltaSec = sec - (s.recordedSec || 0);
+    s.recordedSec = sec;
+    const addMin = Math.round(deltaSec / 60);
+    if (addMin <= 0) return;
     const st = APP.store.get();
     const today = APP.util.todayStr();
     st.studyLog[today] = st.studyLog[today] || {};
-    st.studyLog[today].minutes = (Number(st.studyLog[today].minutes) || 0) + min;
+    st.studyLog[today].minutes = (Number(st.studyLog[today].minutes) || 0) + addMin;
     const fid = focusTaskId();
     let taskText = '';
     if (fid) {
       const t = (st.todayTasks[today] || []).find(x => x.id === fid);
-      if (t) { t.spent = (Number(t.spent) || 0) + min; taskText = ' · ' + t.subject + '/' + t.text; }
+      if (t) { t.spent = (Number(t.spent) || 0) + addMin; taskText = ' · ' + t.subject + '/' + t.text; }
     }
     APP.store.save();
-    APP.toast('番茄钟：已记录 ' + min + ' 分钟' + taskText);
+    APP.toast('番茄钟：已记录 ' + addMin + ' 分钟' + taskText);
     if (APP.updateTopbar) APP.updateTopbar();
     if (APP._navigate && (APP.current === 'dashboard' || APP.current === 'review')) APP.refresh();
   }
@@ -5475,6 +5527,8 @@ window.APP = window.APP || {};
     if (document.getElementById('pomo-root')) return;
     ensure();
     build();
+    // 刷新/重开后若仍在运行，恢复计时（startTs 是真实时间戳，自动续算，不丢时间）
+    if (s.running) s.iv = setInterval(tick, 1000);
     updateView();
   };
   APP.focusTask = function (id) {
