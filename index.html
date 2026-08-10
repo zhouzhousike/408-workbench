@@ -5157,6 +5157,17 @@ window.APP = window.APP || {};
 (function (APP) {
   const REMOTE_PATH = '/408-workbench-backup.json';
   let uploadTimer = null;
+  // 判断一份状态是否「几乎为空」（无学习记录），空状态不应覆盖有数据端
+  function isEmptyState(s) {
+    if (!s) return true;
+    const rec = s.studyLog || {};
+    const hasLog = Object.keys(rec).some(d => rec[d] && (Number(rec[d].minutes) || 0) > 0);
+    const hasOther = (s.english && s.english.wordRecords && Object.keys(s.english.wordRecords).length)
+      || (s.knowledge && Object.values(s.knowledge).some(a => Array.isArray(a) && a.some(p => Number(p.mastery) > 0)))
+      || (s.wrongQuestions && s.wrongQuestions.length)
+      || (s.dailyPractice && s.dailyPractice.length);
+    return !hasLog && !hasOther;
+  }
   // 抑制自动上传标志（初始化下载期间置 true），跨 IIFE 用 APP._suppressAutoUpload 共享
   APP._suppressAutoUpload = false;
 
@@ -5233,18 +5244,20 @@ window.APP = window.APP || {};
       const text = await res.text();
       const remote = JSON.parse(text);
       const local = APP.store.get();
-      // 优先用 _syncTime 判断，缺失时回退到 webdav.lastSync，再回退到空串
       const localTime = (local.meta && local.meta._syncTime) || (local.settings && local.settings.webdav && local.settings.webdav.lastSync) || '';
       const remoteTime = (remote.meta && remote.meta._syncTime) || (remote.settings && remote.settings.webdav && remote.settings.webdav.lastSync) || '';
-      // 云端严格比本地新 → 自动覆盖
-      if (remoteTime && (!localTime || remoteTime > localTime)) {
+      // 云端严格比本地新 且 云端非空 → 自动覆盖
+      if (remoteTime && (!localTime || remoteTime > localTime) && !isEmptyState(remote)) {
         APP.store.importJSON(text);
         APP.toast('☁ 已从云端（iPad 等）恢复最新数据');
         return { ok: true, action: 'restored', msg: '已恢复' };
       }
       // 其余情况（本地更新 / 时间戳相同 / 缺失）不静默覆盖，交给用户选择，避免误删云端数据
       if (opts && opts.force) {
-        // 手动「立即下载」：强制用云端覆盖本地
+        // 手动「立即下载」：若云端为空而本地有数据，拒绝覆盖，避免清空端冲掉有数据端
+        if (isEmptyState(remote) && !isEmptyState(local)) {
+          return { ok: true, action: 'noop', msg: '云端为空，已保留本地数据（未覆盖）' };
+        }
         APP.store.importJSON(text);
         APP.toast('☁ 已从云端恢复数据');
         return { ok: true, action: 'restored', msg: '已恢复' };
@@ -5284,12 +5297,21 @@ window.APP = window.APP || {};
         APP.el('div', { class: 'muted', style: 'font-size:12px', text: '最后同步：' + remoteTime })
       ])
     ]);
+    const remoteEmpty = isEmptyState(remote);
+    const localEmpty = isEmptyState(local);
     APP.openModal('同步冲突', body, [
       APP.el('button', { class: 'btn', text: '取消', onclick: APP.closeModal }),
-      APP.el('button', { class: 'btn danger', text: '保留云端（覆盖本地）', onclick: () => {
-        try { APP.store.importJSON(JSON.stringify(remote)); APP.toast('已覆盖为云端数据'); } catch (e) { APP.toast('覆盖失败'); }
-        APP.closeModal(); APP.refresh();
-      } }),
+      APP.el('button', {
+        class: 'btn danger',
+        text: remoteEmpty && !localEmpty ? '云端为空（不可用）' : '保留云端（覆盖本地）',
+        disabled: remoteEmpty && !localEmpty,
+        style: (remoteEmpty && !localEmpty) ? 'opacity:.5;cursor:not-allowed' : '',
+        onclick: () => {
+          if (remoteEmpty && !localEmpty) return;
+          try { APP.store.importJSON(JSON.stringify(remote)); APP.toast('已覆盖为云端数据'); } catch (e) { APP.toast('覆盖失败'); }
+          APP.closeModal(); APP.refresh();
+        }
+      }),
       APP.el('button', { class: 'btn primary', text: '保留本地（覆盖云端）', onclick: () => {
         APP.syncUpload({ silent: false });
         APP.closeModal();
