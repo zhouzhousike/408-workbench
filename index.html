@@ -1610,9 +1610,11 @@ APP.views.dashboard = function (container) {
       ]));
     } else {
       card.appendChild(APP.el('div', { class: 'muted', style: 'margin-bottom:10px', text: '今日还未打卡' }));
-      card.appendChild(APP.el('div', { class: 'row' }, [
-        APP.el('button', { class: 'btn primary', text: '去打卡', onclick: () => APP._navigate('diary') })
+      card.appendChild(APP.el('div', { class: 'row', style: 'gap:8px' }, [
+        APP.el('button', { class: 'btn primary', text: '去打卡', onclick: () => APP._navigate('diary') }),
+        APP.el('button', { class: 'btn ghost', text: '补录往日', onclick: () => APP._navigate('diary') })
       ]));
+      card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:8px', text: '进入打卡页后，点左上角日期可切换任意日期补录。' }));
     }
     // 本周已打卡天数
     const wks = U.weekStart(today);
