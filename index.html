@@ -1175,6 +1175,30 @@ window.APP = window.APP || {};
     });
   };
 
+  // 听课记录 → 进度 同步（全量重算，避免「改章节旧标记不撤销」）
+  // 每次 lectures 增/删/改后调用：先清掉所有听课派生的标记，再按 st.lectures 整体重打
+  APP.syncLectures = function () {
+    const st = APP.store.get();
+    const lecs = st.lectures || [];
+    // 1. 清除全部听课派生标记
+    Object.keys(st.math || {}).forEach(course => {
+      (st.math[course] || []).forEach(ch => { if (ch.lectured) { ch.lectured = false; ch.progress = 0; } });
+    });
+    Object.keys(st.knowledge || {}).forEach(subj => {
+      (st.knowledge[subj] || []).forEach(p => { if (p.learned) p.learned = false; });
+    });
+    // 2. 按 lectures 重新打标（只命中目录里真实存在的章节）
+    lecs.forEach(l => {
+      if (l.subject === '数学一' && l.course && l.chapter) {
+        const ch = (st.math[l.course] || []).find(c => c.chapter === l.chapter);
+        if (ch) { ch.lectured = true; ch.progress = 100; }
+      } else if (l.subject === '408' && l.course && l.chapter) {
+        const p = (st.knowledge[l.course] || []).find(x => x.chapter === l.chapter);
+        if (p) p.learned = true;
+      }
+    });
+  };
+
   // 408 知识点掌握度按刷题记录自动判定：按 chapter 匹配 dailyPractice，准确率达标则提升掌握度
   APP.autoAssess408 = function (st) {
     if (!st || !st.knowledge) return;
@@ -1451,6 +1475,7 @@ window.APP = window.APP || {};
 
   // ---------- re-render current view ----------
   APP.refresh = function () {
+    if (APP.syncLectures) APP.syncLectures(); // 每次刷新按 lectures 全量重算听课标记，修正历史残留
     if (APP._navigate) APP._navigate(APP.current, true);
     APP.updateTopbar();
   };
@@ -4230,7 +4255,7 @@ APP.views.diary = function (container) {
         APP.el('div', { class: 'row', style: 'gap:8px' }, [
           APP.el('span', { class: 'pill sm', style: 'background:var(--surface-2);color:var(--text-2)', text: r.pass || '一刷' }),
           APP.el('button', { class: 'btn sm ghost', text: '编辑', onclick: () => editLecture(r) }),
-          APP.el('button', { class: 'btn sm ghost', text: '删除', onclick: () => { if (confirm('删除这条听课记录？')) { st.lectures = st.lectures.filter(x => x.id !== r.id); APP.store.save(); APP.refresh(); } } })
+          APP.el('button', { class: 'btn sm ghost', text: '删除', onclick: () => { if (confirm('删除这条听课记录？')) { st.lectures = st.lectures.filter(x => x.id !== r.id); APP.syncLectures(); APP.store.save(); APP.refresh(); } } })
         ])
       ]));
     });
@@ -4289,24 +4314,14 @@ APP.views.diary = function (container) {
     ]);
     APP.openModal(isNew ? '录入听课' : '编辑听课', body, [
       APP.el('button', { class: 'btn', text: '取消', onclick: APP.closeModal }),
-      isNew ? null : APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { if (confirm('确认删除？')) { st.lectures = st.lectures.filter(x => x.id !== o.id); APP.store.save(); APP.closeModal(); APP.refresh(); } } }),
+      isNew ? null : APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { if (confirm('确认删除？')) { st.lectures = st.lectures.filter(x => x.id !== o.id); APP.syncLectures(); APP.store.save(); APP.closeModal(); APP.refresh(); } } }),
       APP.el('button', { class: 'btn primary', text: '保存', onclick: () => {
         o.date = fDate.value || date;
         o.subject = fSub.value;
         o.pass = fPass.value;
         o.note = fNote.value.trim();
         if (isNew) st.lectures.push(o);
-        if (o.subject === '数学一' && o.chapter) {
-          (st.math[o.course] || []).forEach(ch => {
-            if (ch.chapter === o.chapter) {
-              ch.lectured = true;
-              if (Number(ch.progress || 0) !== 100) { ch.progressLog = ch.progressLog || []; ch.progressLog.push({ date: U.todayStr(), value: 100 }); if (ch.progressLog.length > 20) ch.progressLog = ch.progressLog.slice(-20); }
-              ch.progress = 100;
-            }
-          });
-        } else if (o.subject === '408' && o.chapter) {
-          (st.knowledge[o.course] || []).forEach(p => { if (p.chapter === o.chapter) p.learned = true; });
-        }
+        APP.syncLectures();
         APP.store.save(); APP.closeModal(); APP.refresh();
       } })
     ]);
