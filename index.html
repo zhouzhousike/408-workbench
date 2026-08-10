@@ -5232,12 +5232,16 @@ APP.views.analytics = function (container) {
     if (!any) { card.appendChild(APP.el('div', { class: 'empty', text: '暂无打卡数据，打卡后这里会显示图表（已打卡 ' + checkedDaysCount() + ' 天）' })); return card; }
     let maxH = 0; dataArr.forEach(w => { let t = 0; subs.forEach(s => t += w[s]); maxH = Math.max(maxH, t); });
     maxH = maxH / 60;
-    const scaleMax = Math.max(45, Math.ceil(maxH / 10) * 10);
+    // Y 轴自适应：全部按周展示上限更高，本周/本月按日展示上限更低，避免单日数据被压成一条线或 Y 轴夸张
+    const floor = isAll ? 20 : 6;
+    let scaleMax = Math.max(maxH, floor);
+    let step = scaleMax <= 12 ? 2 : scaleMax <= 30 ? 5 : scaleMax <= 60 ? 10 : 20;
+    scaleMax = Math.ceil(scaleMax / step) * step;
     const W = 680, H = 250, padL = 40, padR = 10, padT = 14, padB = 26;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const yOf = h => padT + (1 - h / scaleMax) * plotH;
     const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, style: 'width:100%;height:auto;display:block' });
-    for (let g = 0; g <= scaleMax; g += 10) {
+    for (let g = 0; g <= scaleMax; g += step) {
       const y = yOf(g);
       svg.appendChild(svgEl('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#E3E5E1', 'stroke-width': 1 }));
       svg.appendChild(svgEl('text', { x: padL - 5, y: y + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#9aa' }, [svgTxt(g + '')]));
@@ -5256,7 +5260,7 @@ APP.views.analytics = function (container) {
           acc += h;
         }
       });
-      svg.appendChild(svgEl('text', { x: cx, y: yOf(acc) - 4, 'text-anchor': 'middle', 'font-size': 10, fill: '#18202B', 'font-weight': 600 }, [svgTxt((acc).toFixed(1))]));
+      if (acc > 0) svg.appendChild(svgEl('text', { x: cx, y: yOf(acc) - 4, 'text-anchor': 'middle', 'font-size': 10, fill: '#18202B', 'font-weight': 600 }, [svgTxt((acc).toFixed(1))]));
       if (i % labelStep === 0) {
         svg.appendChild(svgEl('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 9, fill: '#9aa' }, [svgTxt(labels[i])]));
       }
