@@ -2863,7 +2863,7 @@ APP.views.english = function (container) {
         recCard.appendChild(APP.el('div', { style: 'margin-top:8px;padding:8px;background:var(--surface-2);border-radius:6px;font-size:12.5px;line-height:1.5', text: '💡 ' + rec.suggestions }));
       }
     } else {
-      recCard.appendChild(APP.el('div', { class: 'empty', text: '今天还没录入默写掌握情况；可记录总词数、错误数与复习建议' }));
+      recCard.appendChild(APP.el('div', { class: 'empty', text: '今天还没录入默写掌握情况；点右侧「编辑」一次性填日期/List/轮次/正确率' }));
     }
     container.appendChild(recCard);
 
@@ -2879,7 +2879,7 @@ APP.views.english = function (container) {
       passRank.set(ln, cnt);
       passRank.set(key, passOrder[Math.min(cnt, passOrder.length) - 1] || '一刷');
     });
-    const passOf = (r) => passRank.get((r.date || '') + '|' + (r.listName || r.date || '')) || '一刷';
+    const passOf = (r) => (r && r.pass) ? r.pass : (passRank.get((r.date || '') + '|' + (r.listName || r.date || '')) || '一刷');
     const sumWords = allRecs.reduce((s, r) => s + (Number(r.total) || 0), 0);
     const recAcc = (r) => APP.accPct(r);
     const groupAcc = (arr) => { const tot = arr.reduce((s, r) => s + (Number(r.total) || 0), 0); const err = arr.reduce((s, r) => s + APP.errCountOf(r), 0); return tot > 0 ? Math.round((tot - err) / tot * 100) : null; };
@@ -2887,7 +2887,10 @@ APP.views.english = function (container) {
     const reviewCard = APP.el('div', { class: 'card', style: 'margin-top:14px' }, [
       APP.el('div', { class: 'spread' }, [
         APP.el('h3', { text: '单词默写复盘', html: '' }),
-        APP.el('span', { class: 'muted', style: 'font-size:12px', text: allRecs.length + ' 次默写记录' })
+        APP.el('span', { style: 'display:inline-flex;gap:8px;align-items:center' }, [
+          APP.el('span', { class: 'muted', style: 'font-size:12px', text: allRecs.length + ' 次默写记录' }),
+          APP.el('button', { class: 'btn sm primary', text: '+ 补录/录入', onclick: () => editRec('') })
+        ])
       ])
     ]);
     if (sumWords > 0) {
@@ -2901,26 +2904,8 @@ APP.views.english = function (container) {
         APP.el('span', { class: 'pill', style: 'background:var(--surface-2);color:var(--text-2)', text: '总体正确率 ' + groupAcc(allRecs) + '%' })
       ]));
     }
-    // 快速录入今日默写（填 总词数 + 错误数，不区分拼写/释义；轮次按 List 出现顺序自动推导一刷/二刷）
-    const _lists = [...new Set(Object.values(eng.wordRecords || {}).map(r => r.listName).filter(Boolean))];
-    const _cur = (eng.wordRecords || {})[today] || {};
-    const _fList = APP.el('input', { value: _cur.listName || _lists[0] || 'List 1', placeholder: 'List 名称', style: 'width:108px' });
-    const _fTotal = APP.el('input', { type: 'number', value: (Number(_cur.total) || 0), placeholder: '总词数', style: 'width:74px' });
-    const _fErr = APP.el('input', { type: 'number', value: (typeof _cur.errCount === 'number' ? _cur.errCount : ''), placeholder: '错误数', style: 'width:74px' });
-    const _accLabel = APP.el('span', { class: 'muted', style: 'font-size:12px' });
-    const _refreshAcc = () => { const t = Number(_fTotal.value) || 0, e = Number(_fErr.value) || 0; _accLabel.textContent = t > 0 ? ('正确率 ' + Math.round((t - e) / t * 100) + '%') : '正确率 —'; };
-    _fTotal.oninput = _fErr.oninput = _refreshAcc; _refreshAcc();
-    const _quickSave = APP.el('button', { class: 'btn sm primary', text: '保存今日', onclick: () => {
-      const listName = _fList.value.trim() || 'List 1';
-      const total = Number(_fTotal.value) || 0;
-      const errCount = Math.max(0, Number(_fErr.value) || 0);
-      eng.wordRecords[today] = Object.assign({}, eng.wordRecords[today], { date: today, listName, total, errCount, suggestions: (eng.wordRecords[today] && eng.wordRecords[today].suggestions) || '' });
-      APP.store.save(); APP.refresh();
-    } });
-    reviewCard.appendChild(APP.el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:10px 0 2px;padding:8px 10px;background:var(--surface-2);border-radius:8px' }, [
-      APP.el('b', { style: 'font-size:12.5px', text: '快速录入今日默写' }),
-      _fList, _fTotal, _fErr, _quickSave, _accLabel
-    ]));
+    // 补录/录入入口已移至复盘卡片标题处的「+ 补录/录入」按钮（editRec('') 支持任意日期），此处不再保留重复的内联表单
+    reviewCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:10px', text: '💡 今天或过往的默写都点上方「+ 补录/录入」一次填完（日期 / List / 轮次 / 正确率），下方自动汇总更新' }));
 
     if (allRecs.length) {
       const maxW = Math.max.apply(null, allRecs.map(r => Number(r.total) || 0));
@@ -2978,35 +2963,60 @@ APP.views.english = function (container) {
         } })
       ]);
     }
+    // 轮次自动推导（passOrder 已在上方 4.5 处声明，复用）：同一 listName 按日期第一次出现=一刷、第二次=二刷……
+    const derivePass = (listName, date) => {
+      const recs = (Object.values(eng.wordRecords || {}))
+        .filter(r => r && r.listName === listName && (Number(r.total) || 0) > 0)
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const idx = recs.findIndex(r => r.date === date);
+      const cnt = idx < 0 ? recs.length + 1 : idx + 1;
+      return passOrder[Math.min(cnt - 1, passOrder.length - 1)] || '一刷';
+    };
+
     function editRec(date) {
-      date = date || today;
-      const rec = (eng.wordRecords || {})[date] || { total: 0, errCount: 0, suggestions: '' };
-      // 默认取历史第一个 List，方便继续复习；没有则新建 List 1
+      const isNew = (date === '' || date == null);
+      const d = isNew ? today : date;
+      const rec = (eng.wordRecords || {})[d] || { total: 0, errCount: 0, suggestions: '', pass: '' };
       const existingLists = [...new Set(Object.values(eng.wordRecords || {}).map(r => r.listName).filter(Boolean))];
       const firstList = existingLists[0] || 'List 1';
       const recListName = rec.listName || firstList;
-      const fTotal = APP.el('input', { type: 'number', value: rec.total || 0, placeholder: '总词数' });
+      // 轮次：优先用已存记录里的；否则按 List + 日期自动推导
+      const autoPass = rec.pass || derivePass(recListName, d);
+      const fDate = APP.el('input', { type: 'date', value: isNew ? today : d });
       const fListName = APP.el('input', { value: recListName, placeholder: '如 List 1', style: 'min-width:120px' });
+      const fPassOptions = passOrder.map(p => APP.el('option', { value: p, selected: p === autoPass ? 'selected' : false, text: p + (p === autoPass ? '（自动）' : '') }));
+      const fPass = APP.el('select', {}, fPassOptions);
+      const fTotal = APP.el('input', { type: 'number', value: rec.total || 0, placeholder: '总词数' });
       const fErr = APP.el('input', { type: 'number', value: (typeof rec.errCount === 'number' ? rec.errCount : 0), placeholder: '错误数（不区分拼写/释义）' });
       const fSug = APP.el('textarea', { value: rec.suggestions || '', placeholder: '复习建议', style: 'min-height:60px' });
-      APP.openModal((date === today ? '录入/编辑 今日默写掌握情况' : '编辑默写记录 · ' + date), APP.el('div', {}, [
-        APP.field('日期', APP.el('input', { value: date, disabled: true, style: 'opacity:.7' })),
-        APP.field('总词数', fTotal),
+      const accLabel = APP.el('span', { class: 'muted', style: 'font-size:12px' });
+      const refreshAcc = () => { const t = Number(fTotal.value) || 0, e = Math.max(0, Number(fErr.value) || 0); accLabel.textContent = t > 0 ? ('正确率 ' + Math.round((t - e) / t * 100) + '%') : '正确率 —'; };
+      fTotal.oninput = fErr.oninput = refreshAcc; refreshAcc();
+      APP.openModal((isNew ? '补录 / 录入 默写掌握情况' : '编辑默写记录 · ' + d), APP.el('div', {}, [
+        APP.field('日期（不填默认为今天，可补录过往日期）', fDate),
         APP.field('List 名称（今天要复习的 List）', fListName),
-        APP.field('错误数（不区分拼写/释义）', fErr),
+        APP.field('轮次（一刷 / 二刷…；选「自动」则按 List 出现顺序推导）', fPass),
+        APP.field('总词数', fTotal),
+        APP.field('错误数（不区分拼写 / 释义）', fErr),
+        APP.el('div', { style: 'margin:2px 0 8px' }, [accLabel]),
         APP.field('复习建议', fSug)
       ]), [
         APP.el('button', { class: 'btn', text: '取消', onclick: APP.closeModal }),
-        APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { if (confirm('删除 ' + date + ' 的默写记录？此操作不可恢复。')) { delete eng.wordRecords[date]; APP.store.save(); APP.closeModal(); APP.refresh(); } } }),
+        APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { if (confirm('删除 ' + d + ' 的默写记录？此操作不可恢复。')) { delete eng.wordRecords[d]; APP.store.save(); APP.closeModal(); APP.refresh(); } } }),
         APP.el('button', { class: 'btn primary', text: '保存', onclick: () => {
+          const saveDate = fDate.value || d;
           const total = Number(fTotal.value) || 0;
           const errCount = Math.max(0, Number(fErr.value) || 0);
           const listName = fListName.value.trim() || rec.listName || firstList;
-          eng.wordRecords[date] = {
-            date: date, total, errCount, suggestions: fSug.value.trim(),
+          const chosenPass = fPass.value;
+          // 仅在用户明确手选了具体轮次（非「自动」）时才存 pass，否则留空让汇总处自动推导
+          const storePass = (chosenPass && chosenPass !== autoPass && !chosenPass.endsWith('（自动）')) ? chosenPass : (rec.pass || '');
+          eng.wordRecords[saveDate] = {
+            date: saveDate, total, errCount, suggestions: fSug.value.trim(),
             reviewCount: rec.reviewCount || 0,
-            nextReview: rec.nextReview || U.addDays(date, 3),
-            listName
+            nextReview: rec.nextReview || U.addDays(saveDate, 3),
+            listName,
+            pass: storePass
           };
           APP.store.save(); APP.closeModal(); APP.refresh();
         }})
