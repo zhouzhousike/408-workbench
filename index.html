@@ -528,6 +528,47 @@ window.APP = window.APP || {};
     if (rc < 1 || rc >= APP.REVIEW_GAPS.length) return null;
     return APP.REVIEW_GAPS[rc];
   };
+  // 错题「做对才进阶」复习：二刷/三刷做错则同一阶段短期重做，做对才进下一阶段
+  APP.WQ_REDO_GAP = 3; // 做错后同一阶段重做间隔（天）
+  APP.wqStageName = function (stage) {
+    const s = Number(stage);
+    if (s >= 2) return '三刷(已完成)';
+    if (s >= 1) return '三刷';
+    return '二刷';
+  };
+  // 标记一次复习结果：gotRight=true 做对进阶；false 做错原地重做同一阶段
+  APP.doWrongReview = function (q, gotRight) {
+    if (q.stage == null) q.stage = Math.min(Number(q.reviewCount) || 0, 2);
+    q.attempts = (Number(q.attempts) || 0) + 1;
+    q.lastReview = APP.util.todayStr();
+    if (!gotRight) {
+      q.nextReview = APP.util.addDays(APP.util.todayStr(), APP.WQ_REDO_GAP);
+      APP.store.save();
+      APP.toast('「' + (q.title || '该题') + '」又做错了，' + APP.WQ_REDO_GAP + '天后再做一遍' + APP.wqStageName(q.stage) + ' ✓');
+      APP.refresh();
+      return;
+    }
+    if (q.stage >= 1) {
+      q.stage = 2; q.nextReview = ''; q.mastery = 5;
+      APP.store.save(); APP.toast('三刷通过，「' + (q.title || '该题') + '」复习结束 ✓'); APP.refresh();
+    } else {
+      q.stage = 1; q.nextReview = APP.util.addDays(APP.util.todayStr(), APP.REVIEW_GAPS[1]);
+      APP.store.save(); APP.toast('二刷通过，「' + (q.title || '该题') + '」' + q.nextReview + ' 三刷 ✓'); APP.refresh();
+    }
+  };
+  // 复习弹窗：明确显示正在复习的题（题号/来源），并询问这次做对了吗
+  APP.openReviewDialog = function (q) {
+    const stage = q.stage == null ? Math.min(Number(q.reviewCount) || 0, 2) : q.stage;
+    const body = APP.el('div', {}, [
+      APP.el('div', { class: 'muted', style: 'font-size:13px;margin-bottom:6px', text: '正在复习：' + (q.title || '该题') }),
+      APP.el('div', { style: 'font-size:12.5px;color:var(--muted);margin-bottom:14px', text: (q.source ? ('来源：' + q.source + ' · ') : '') + (q.knowledgePoint ? ('知识点：' + q.knowledgePoint + ' · ') : '') + '当前阶段：' + APP.wqStageName(stage) }),
+      APP.el('div', { style: 'font-weight:600;font-size:14px', text: '这次做对了吗？' })
+    ]);
+    APP.openModal('错题复习', body, [
+      APP.el('button', { class: 'btn', text: '又做错了', onclick: () => { APP.closeModal(); APP.doWrongReview(q, false); } }),
+      APP.el('button', { class: 'btn primary', text: '做对了 ✓', onclick: () => { APP.closeModal(); APP.doWrongReview(q, true); } })
+    ]);
+  };
   // 单词 List 记忆曲线：相对背诵日的「绝对天数」节点（第2/4/7/15/30天 → 偏移 +1/+3/+6/+14/+29 天）
   APP.WORD_REVIEW_OFFSETS = [1, 3, 6, 14, 29];
   APP.wordReviewDayLabel = function (i) { return (APP.WORD_REVIEW_OFFSETS[i] || 0) + 1; }; // 偏移+1 = 第几天
@@ -987,6 +1028,14 @@ window.APP = window.APP || {};
         }
       });
       oldState._wrongReviewCapMigrated = true;
+    }
+    // 14. 错题新增 stage/attempts 字段：从旧 reviewCount 迁移（stage: 0待二刷/1待三刷/2已完成；attempts: 累计复习次数）
+    if (!oldState._wrongStageMigrated) {
+      (oldState.wrongQuestions || []).forEach(q => {
+        if (q.stage == null) q.stage = Math.min(Number(q.reviewCount) || 0, 2);
+        if (q.attempts == null) q.attempts = Number(q.reviewCount) || 0;
+      });
+      oldState._wrongStageMigrated = true;
     }
     return oldState;
   }
@@ -1618,9 +1667,9 @@ APP.views.dashboard = function (container) {
       revCard.appendChild(APP.el('div', { class: 'list-row' }, [
         APP.el('div', { style: 'flex:1' }, [
           APP.el('div', { text: q.title || '(未命名错题)' }),
-          APP.el('div', { class: 'muted', style: 'font-size:12px', text: `${q.subject || ''} · 已复习 ${q.reviewCount || 0} 次` + (q.nextReview ? ` · 下次应在 ${q.nextReview}` : ' · 复习已完成 ✓') })
+          APP.el('div', { class: 'muted', style: 'font-size:12px', text: `${q.subject || ''} · 已复习 ${q.attempts || 0} 次` + (q.nextReview ? ` · 下次应在 ${q.nextReview}` : ' · 复习已完成 ✓') })
         ]),
-        APP.el('button', { class: 'btn sm primary', text: '已复习', onclick: () => reviewWrong(q.id) })
+        APP.el('button', { class: 'btn sm primary', text: '复习', onclick: () => { const qq = (st.wrongQuestions || []).find(x => x.id === q.id); if (qq) APP.openReviewDialog(qq); } })
       ]));
     });
   }
@@ -2080,17 +2129,7 @@ APP.views.dashboard = function (container) {
   function reviewWrong(id) {
     const q = st.wrongQuestions.find(x => x.id === id);
     if (!q) return;
-    q.reviewCount = (q.reviewCount || 0) + 1;
-    q.lastReview = today;
-    const gap = APP.nextReviewGap(q.reviewCount);
-    if (gap == null) {
-      q.nextReview = '';            // 三刷完成，不再安排
-      q.mastery = 5;               // 标记已完成
-      APP.store.save(); APP.toast('已完成二刷+三刷，该错题复习结束 ✓'); APP.refresh();
-    } else {
-      q.nextReview = U.addDays(today, gap);
-      APP.store.save(); APP.toast('已记录复习，下次：' + q.nextReview); APP.refresh();
-    }
+    APP.openReviewDialog(q);
   }
   function dueWordReviews() {
     const recs = (st.english && st.english.wordRecords) || {};
@@ -3721,16 +3760,17 @@ APP.views.wrongq = function (container) {
           ]),
           APP.el('div', { class: 'row' }, [
             q.secondPass ? APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: '已二刷' }) : null,
-            overdue ? APP.el('span', { class: 'pill', style: 'background:#fff0f0;color:var(--danger);border-color:#ffc9c9', text: '待复习' }) : null,
-            APP.el('span', { class: 'muted', style: 'font-size:12px', text: '掌握 ' + q.mastery + '/5 · 复习' + (q.reviewCount || 0) + '次' }),
-            APP.el('button', { class: 'btn sm primary', text: '复习', onclick: () => doReview(q) }),
+            (q.stage == 1 && q.nextReview) ? APP.el('span', { class: 'pill', style: 'background:#fff7e6;color:#b26a00;border-color:#ffe0a3', text: '待三刷' }) : null,
+            ((q.stage == 0 || q.stage == null) && q.nextReview) ? APP.el('span', { class: 'pill', style: 'background:#eef4ff;color:#2f6fed;border-color:#cfe0ff', text: '待二刷' }) : null,
+            APP.el('span', { class: 'muted', style: 'font-size:12px', text: '掌握 ' + q.mastery + '/5 · 复习' + (Number(q.attempts) || Number(q.reviewCount) || 0) + '次' }),
+            (q.stage >= 2) ? APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: '已完成 ✓' }) : APP.el('button', { class: 'btn sm primary', text: '复习', onclick: () => doReview(q) }),
             APP.el('button', { class: 'btn sm', text: '编辑', onclick: () => editQ(q) })
           ])
         ]),
         APP.el('div', { class: 'muted', style: 'font-size:12.5px;margin-top:4px' }, [
           APP.el('div', {}, (q.reasons || []).map(r => APP.el('span', { class: 'pill', style: 'margin-right:5px;background:var(--surface-2);color:var(--text-2)', text: r }))),
           q.solution ? APP.el('div', { text: '解决：' + q.solution }) : null,
-          q.nextReview ? APP.el('div', { class: 'muted', text: '下次复习：' + q.nextReview }) : APP.el('div', { class: 'muted', style: 'color:var(--accent)', text: '✓ 二刷+三刷已完成' })
+          q.nextReview ? APP.el('div', { class: 'muted', text: '下次复习：' + q.nextReview + '（' + APP.wqStageName(q.stage == null ? 0 : q.stage) + '）' }) : APP.el('div', { class: 'muted', style: 'color:var(--accent)', text: '✓ 二刷+三刷已完成' })
         ])
       ]));
     });
@@ -3738,17 +3778,7 @@ APP.views.wrongq = function (container) {
   }
 
   function doReview(q) {
-    q.reviewCount = (q.reviewCount || 0) + 1;
-    q.lastReview = today;
-    const gap = APP.nextReviewGap(q.reviewCount);
-    if (gap == null) {
-      q.nextReview = '';
-      q.mastery = 5;
-      APP.store.save(); APP.toast('已完成二刷+三刷，该错题复习结束 ✓'); APP.refresh();
-    } else {
-      q.nextReview = U.addDays(today, gap);
-      APP.store.save(); APP.toast('已复习，下次：' + q.nextReview); APP.refresh();
-    }
+    APP.openReviewDialog(q);
   }
 
   function aiAnalyze(r) {
@@ -4620,7 +4650,7 @@ APP.views.review = function (container) {
     (APP.chapterAccuracy(st.dailyPractice) || []).forEach(x => {
       if (x.total >= 5 && x.accuracy < 70) out.push({ subject: x.subject, text: x.chapter + ' · 正确率 ' + x.accuracy + '%（' + x.correct + '/' + x.total + '）', level: x.accuracy < 60 ? '未掌握' : '掌握弱' });
     });
-    (st.wrongQuestions || []).filter(q => (q.mastery || 0) < 5 && (q.reviewCount || 0) > 0).slice(0, 6).forEach(q => {
+    (st.wrongQuestions || []).filter(q => (q.mastery || 0) < 5 && (Number(q.attempts) || Number(q.reviewCount) || 0) > 0).slice(0, 6).forEach(q => {
       out.push({ subject: q.subject || '408', text: (q.title || '').slice(0, 28) || '未命名错题', level: '未掌握' });
     });
     const seen = new Set();
