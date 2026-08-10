@@ -533,6 +533,72 @@ window.APP = window.APP || {};
     return APP.util.addDays(reciteDate, APP.WORD_REVIEW_OFFSETS[i]);
   };
 
+  // 单词 List 以 listName 为维度建立「背诵轮次」：同一 listName 的所有记录视为同一轮记忆曲线
+  // wordRounds 负责复习 scheduling；wordRecords[date] 仍保留作为历史明细
+  APP.rebuildWordRounds = function (eng) {
+    if (!eng) return;
+    const recs = Object.values(eng.wordRecords || {}).filter(r => r && r.listName);
+    const byList = {};
+    recs.forEach(r => {
+      (byList[r.listName] = byList[r.listName] || []).push(r);
+    });
+    eng.wordRounds = {};
+    Object.keys(byList).forEach(listName => {
+      const sorted = byList[listName].slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const start = sorted[0].date || APP.util.todayStr();
+      const cnt = Math.max(0, sorted.length - 1);
+      const limited = Math.min(cnt, APP.WORD_REVIEW_OFFSETS.length);
+      const last = sorted[sorted.length - 1];
+      eng.wordRounds[listName] = {
+        listName,
+        startDate: start,
+        reviewCount: limited,
+        nextReview: limited < APP.WORD_REVIEW_OFFSETS.length ? APP.wordReviewDate(start, limited) : '',
+        lastDate: last.date || start,
+        lastErr: typeof last.errCount === 'number' ? last.errCount : 0,
+        lastTotal: Number(last.total) || 0
+      };
+    });
+  };
+  APP.wordRound = function (eng, listName) {
+    return (eng && eng.wordRounds && eng.wordRounds[listName]) || null;
+  };
+  // 在 wordRecords 保存后同步更新对应轮次；isEditSameDate 表示只是修改同日期已有记录，不推进复习计数
+  APP.updateWordRoundOnSave = function (eng, saveDate, listName, total, errCount, isEditSameDate) {
+    if (!eng || !listName) return;
+    eng.wordRounds = eng.wordRounds || {};
+    let round = eng.wordRounds[listName];
+    if (!round) {
+      eng.wordRounds[listName] = {
+        listName,
+        startDate: saveDate,
+        reviewCount: 0,
+        nextReview: APP.wordReviewDate(saveDate, 0) || '',
+        lastDate: saveDate,
+        lastErr: typeof errCount === 'number' ? errCount : 0,
+        lastTotal: Number(total) || 0
+      };
+      return;
+    }
+    // 若补录的日期比原背诵日还早，重置背诵日
+    if (saveDate < round.startDate) {
+      round.startDate = saveDate;
+      round.reviewCount = 0;
+      round.nextReview = APP.wordReviewDate(saveDate, 0) || '';
+    }
+    // 新日期的记录，且到达/超过当前应复习日，则视为完成一次复习
+    if (!isEditSameDate && saveDate >= round.nextReview && round.reviewCount < APP.WORD_REVIEW_OFFSETS.length) {
+      round.reviewCount++;
+      round.nextReview = APP.wordReviewDate(round.startDate, round.reviewCount) || '';
+    }
+    // 刷新最近一次记录的错词/总量（取最新日期）
+    if (saveDate >= round.lastDate) {
+      round.lastDate = saveDate;
+      round.lastErr = typeof errCount === 'number' ? errCount : 0;
+      round.lastTotal = Number(total) || 0;
+    }
+  };
+
   // ---------- date utils ----------
   APP.util = {
     todayStr() {
@@ -894,6 +960,8 @@ window.APP = window.APP || {};
     if (!oldState.monthlyTasks) oldState.monthlyTasks = [];
     // 11. 补充英语单词默写掌握记录字段
     if (oldState.english && oldState.english.wordRecords === undefined) oldState.english.wordRecords = {};
+    // 11.5 单词 List 按 listName 聚合为背诵轮次（wordRounds 负责 scheduling，wordRecords 保留历史明细）
+    if (oldState.english && !oldState.english.wordRounds) APP.rebuildWordRounds(oldState.english);
     // 12. 补充 WebDAV 配置字段
     oldState.settings = oldState.settings || {};
     const wv = oldState.settings.webdav;
@@ -1495,47 +1563,46 @@ APP.views.dashboard = function (container) {
   }
   // 单词 List 记忆曲线复习（无论是否有错词，背过的 List 都按 第2/4/7/15/30天 节奏复习）
   st.todayReviewed = st.todayReviewed || {};
-  const wordKey = (r) => (r.date || '') + '__' + (r.listName || '');
   if (dueWords.length) {
     dueWords.forEach(item => {
-      const r = item.r;
-      const errCount = APP.errCountOf(r);
+      const round = item.round;
+      const errCount = Number(round.lastErr) || 0;
       const dueDay = APP.wordReviewDayLabel(item.dueIndex - 1);
       revCard.appendChild(APP.el('div', { class: 'list-row' }, [
         APP.el('div', { style: 'flex:1' }, [
-          APP.el('div', { text: (r.listName || ('List · ' + r.date)) + ' · 第 ' + dueDay + ' 天复习（第 ' + item.dueIndex + ' 次）' }),
-          APP.el('div', { class: 'muted', style: 'font-size:12px', text: r.date + ' 背诵 · 应复习日 ' + APP.wordReviewDate(r.date || today, item.dueIndex - 1) + (errCount ? ' · ' + errCount + ' 个错词' : ' · 无错词') })
+          APP.el('div', { text: item.listName + ' · 第 ' + dueDay + ' 天复习（第 ' + item.dueIndex + ' 次）' }),
+          APP.el('div', { class: 'muted', style: 'font-size:12px', text: round.startDate + ' 背诵 · 应复习日 ' + (round.nextReview || '—') + (errCount ? ' · ' + errCount + ' 个错词' : ' · 无错词') })
         ]),
         APP.el('button', { class: 'btn sm primary', text: '已复习', onclick: () => {
-          r.reviewCount = (Number(r.reviewCount) || 0) + 1;
-          const nx = APP.wordReviewDate(r.date || today, r.reviewCount);
-          r.nextReview = nx || '';
-          st.todayReviewed[wordKey(r)] = true;
-          APP.store.save(); APP.toast(nx ? ('已记录单词复习，下次：' + nx) : '该 List 已完成全部记忆曲线复习 ✓'); APP.refresh();
+          round.reviewCount = (Number(round.reviewCount) || 0) + 1;
+          round.lastDate = today;
+          round.nextReview = APP.wordReviewDate(round.startDate, round.reviewCount) || '';
+          st.todayReviewed[item.listName] = true;
+          APP.store.save(); APP.toast(round.nextReview ? ('已记录单词复习，下次：' + round.nextReview) : '该 List 已完成全部记忆曲线复习 ✓'); APP.refresh();
         } })
       ]));
     });
   } else {
     // 背过 List 但今天不 due，也展示进度与下次复习日（第X天），避免空白
-    const allRecs = (st.english && st.english.wordRecords) || {};
-    const recArr = Object.values(allRecs);
-    if (recArr.length) {
-      recArr.forEach(r => {
-        const cnt = Number(r.reviewCount) || 0;
-        const nx = APP.wordReviewDate(r.date || today, cnt);
-        const errCount = APP.errCountOf(r);
+    const allRounds = (st.english && st.english.wordRounds) || {};
+    const roundArr = Object.values(allRounds);
+    if (roundArr.length) {
+      roundArr.forEach(round => {
+        const cnt = Number(round.reviewCount) || 0;
+        const nx = APP.wordReviewDate(round.startDate, cnt);
+        const errCount = Number(round.lastErr) || 0;
         const done = !nx;
         revCard.appendChild(APP.el('div', { class: 'list-row', style: 'opacity:.85' }, [
           APP.el('div', { style: 'flex:1' }, [
-            APP.el('div', { text: (r.listName || ('List · ' + r.date)) + (done ? ' · 已完成全部复习' : ' · 已复习 ' + cnt + ' 次') }),
+            APP.el('div', { text: (round.listName || ('List · ' + round.startDate)) + (done ? ' · 已完成全部复习' : ' · 已复习 ' + cnt + ' 次') }),
             APP.el('div', { class: 'muted', style: 'font-size:12px', text: '下次复习 ' + (nx ? (nx + '（第 ' + APP.wordReviewDayLabel(cnt) + ' 天）') : '—') + (errCount ? ' · ' + errCount + ' 个错词待巩固' : '') })
           ]),
           APP.el('button', { class: 'btn sm ghost', text: '复习', onclick: () => {
-            r.reviewCount = (Number(r.reviewCount) || 0) + 1;
-            const nx2 = APP.wordReviewDate(r.date || today, r.reviewCount);
-            r.nextReview = nx2 || '';
-            st.todayReviewed[wordKey(r)] = true;
-            APP.store.save(); APP.toast(nx2 ? ('已记录单词复习，下次：' + nx2) : '该 List 已完成全部记忆曲线复习 ✓'); APP.refresh();
+            round.reviewCount = (Number(round.reviewCount) || 0) + 1;
+            round.lastDate = today;
+            round.nextReview = APP.wordReviewDate(round.startDate, round.reviewCount) || '';
+            st.todayReviewed[round.listName] = true;
+            APP.store.save(); APP.toast(round.nextReview ? ('已记录单词复习，下次：' + round.nextReview) : '该 List 已完成全部记忆曲线复习 ✓'); APP.refresh();
           } })
         ]));
       });
@@ -1545,21 +1612,23 @@ APP.views.dashboard = function (container) {
     }
   }
   // 今日已复习（划线保留，可回退）
-  const reviewedList = [];
-  Object.values((st.english && st.english.wordRecords) || {}).forEach(r => { if (r && st.todayReviewed[wordKey(r)]) reviewedList.push(r); });
+  const roundsMap = (st.english && st.english.wordRounds) || {};
+  const reviewedList = Object.keys(roundsMap).filter(listName => st.todayReviewed[listName]);
   if (reviewedList.length) {
     revCard.appendChild(APP.el('div', { style: 'font-size:12px;color:var(--text-2);margin:14px 0 4px', text: '✅ 今日已复习（点击撤销可回退）' }));
-    reviewedList.forEach(r => {
+    reviewedList.forEach(listName => {
+      const round = roundsMap[listName];
+      if (!round) return;
       revCard.appendChild(APP.el('div', { class: 'list-row', style: 'opacity:.62' }, [
         APP.el('div', { style: 'flex:1' }, [
-          APP.el('div', { style: 'text-decoration:line-through', text: (r.listName || ('List · ' + r.date)) + ' · 已复习' }),
-          APP.el('div', { class: 'muted', style: 'font-size:12px', text: r.date + ' 背诵 · 下次 ' + (r.nextReview || '—') })
+          APP.el('div', { style: 'text-decoration:line-through', text: listName + ' · 已复习' }),
+          APP.el('div', { class: 'muted', style: 'font-size:12px', text: round.startDate + ' 背诵 · 下次 ' + (round.nextReview || '—') })
         ]),
         APP.el('button', { class: 'btn sm ghost', text: '撤销', onclick: () => {
-          const oldCount = Math.max(0, (Number(r.reviewCount) || 1) - 1);
-          r.reviewCount = oldCount;
-          r.nextReview = APP.wordReviewDate(r.date || today, oldCount) || '';
-          delete st.todayReviewed[wordKey(r)];
+          const oldCount = Math.max(0, (Number(round.reviewCount) || 1) - 1);
+          round.reviewCount = oldCount;
+          round.nextReview = APP.wordReviewDate(round.startDate, oldCount) || '';
+          delete st.todayReviewed[listName];
           APP.store.save(); APP.toast('已撤销，重新计入待复习'); APP.refresh();
         } })
       ]));
@@ -1964,18 +2033,18 @@ APP.views.dashboard = function (container) {
     });
     return out;
   }
-  // 单词 List 记忆曲线复习（无论是否有错词，背过的 List 都按 第2/4/7/15/30天 提醒）
+  // 单词 List 记忆曲线复习：按 listName 聚合为背诵轮次，统一调度
   function dueWordListReviews() {
-    const recs = (st.english && st.english.wordRecords) || {};
+    const rounds = (st.english && st.english.wordRounds) || {};
     const out = [];
-    Object.values(recs).forEach(r => {
-      const rc = Number(r.reviewCount) || 0;
-      const next = APP.wordReviewDate(r.date || today, rc);
+    Object.keys(rounds).forEach(listName => {
+      const round = rounds[listName];
+      const next = round.nextReview;
       if (next && next <= today) {
-        out.push({ r, dueIndex: rc + 1 });
+        out.push({ round, listName, dueIndex: (Number(round.reviewCount) || 0) + 1 });
       }
     });
-    return out.sort((a, b) => a.r.date.localeCompare(b.r.date));
+    return out.sort((a, b) => (a.round.startDate || '').localeCompare(b.round.startDate || ''));
   }
   function parseWeekNum(tw) {
     if (!tw) return null;
@@ -3098,6 +3167,7 @@ APP.views.english = function (container) {
           const chosenPass = fPass.value;
           // 仅在用户明确手选了具体轮次（非「自动」）时才存 pass，否则留空让汇总处自动推导
           const storePass = (chosenPass && chosenPass !== autoPass && !chosenPass.endsWith('（自动）')) ? chosenPass : (rec.pass || '');
+          const isEditSameDate = !isNew && saveDate === d;
           eng.wordRecords[saveDate] = {
             date: saveDate, total, errCount, suggestions: fSug.value.trim(),
             reviewCount: rec.reviewCount || 0,
@@ -3105,6 +3175,7 @@ APP.views.english = function (container) {
             listName,
             pass: storePass
           };
+          APP.updateWordRoundOnSave(eng, saveDate, listName, total, errCount, isEditSameDate);
           APP.store.save(); APP.closeModal(); APP.refresh();
         }})
       ]);
