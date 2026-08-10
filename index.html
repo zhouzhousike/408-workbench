@@ -1029,6 +1029,15 @@ window.APP = window.APP || {};
     const recVal = (pass === '一刷') ? (Number(r.total) || 0) : 0;
     return Math.max(logVal, recVal);
   };
+  // 时长格式化：>=60min 自动转 xh ymin，否则 xmin
+  APP.formatMin = function (m) {
+    const n = Math.max(0, Math.round(Number(m) || 0));
+    if (n === 0) return '0min';
+    const h = Math.floor(n / 60), min = n % 60;
+    if (h > 0 && min > 0) return h + 'h' + min + 'min';
+    if (h > 0) return h + 'h';
+    return min + 'min';
+  };
 
   // 大小周推算：基准 2026-08-03 = 大周（双休）；支持按周手动覆盖（state.weekTypeOverride[周一]）
   APP.weekTypeFor = function (d) {
@@ -4046,13 +4055,13 @@ APP.views.diary = function (container) {
       const m = l.subjectMin || {};
       const mins = Number(l.minutes) || 0;
       const subj = [];
-      if (Number(m.math) > 0) subj.push('数' + m.math);
-      if (Number(m.cs) > 0) subj.push('8' + m.cs);
-      if (Number(m.eng) > 0) subj.push('英' + m.eng);
-      if (Number(m.pol) > 0) subj.push('政' + m.pol);
+      if (Number(m.math) > 0) subj.push('数' + APP.formatMin(m.math));
+      if (Number(m.cs) > 0) subj.push('专' + APP.formatMin(m.cs));
+      if (Number(m.eng) > 0) subj.push('英' + APP.formatMin(m.eng));
+      if (Number(m.pol) > 0) subj.push('政' + APP.formatMin(m.pol));
       listEl.appendChild(APP.el('div', { class: 'list-row', style: 'padding:5px 0;cursor:pointer', onclick: () => { APP._diaryDate = d; APP.refresh(); } }, [
         APP.el('b', { style: 'font-size:13px;min-width:88px', text: d }),
-        APP.el('span', { class: 'muted', style: 'font-size:12px', text: mins + '分钟' + (subj.length ? ' · ' + subj.join(' ') : '') })
+        APP.el('span', { class: 'muted', style: 'font-size:12px', text: APP.formatMin(mins) + (subj.length ? ' · ' + subj.join(' ') : '') })
       ]));
     });
     histCard.appendChild(listEl);
