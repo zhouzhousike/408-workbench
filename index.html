@@ -1373,6 +1373,23 @@ APP.views.dashboard = function (container) {
 
   // 3. Today's task center
   const taskCard = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '今日任务中心', html: '' })]);
+  // 昨日计划自动带入（在学习打卡页写的「明日计划」→ 次日自动成为今日任务，一处录入全局联动）
+  const yday = U.addDays(today, -1);
+  const yLog = st.studyLog[yday] || {};
+  if (yLog.planTomorrow && yLog.planTomorrow.trim()) {
+    const planDone = !!yLog.planDone;
+    const planBlock = APP.el('div', { style: 'margin-bottom:14px;padding:10px 12px;background:var(--surface-2);border-radius:8px;border-left:3px solid var(--accent)' }, [
+      APP.el('div', { class: 'spread', style: 'margin-bottom:6px' }, [
+        APP.el('span', { style: 'font-size:12.5px;font-weight:600;color:var(--text-2)', text: '📌 昨日计划（' + yday + ' 写于学习打卡）' }),
+        APP.el('span', { class: 'muted', style: 'font-size:11.5px', text: '勾选即标记完成' })
+      ]),
+      APP.el('div', { class: 'list-row', style: 'padding:2px 0' }, [
+        APP.el('div', { class: 'check' + (planDone ? ' done' : ''), text: planDone ? '✓' : '', onclick: () => { yLog.planDone = !planDone; APP.store.save(); APP.refresh(); } }),
+        APP.el('span', { style: 'flex:1;font-size:13px' + (planDone ? ';text-decoration:line-through;color:var(--muted)' : ''), text: yLog.planTomorrow })
+      ])
+    ]);
+    taskCard.appendChild(planBlock);
+  }
   const ws2 = APP.el('div', { style: 'margin-top:10px' });
   APP.SUBJECTS.forEach(sub => {
     const items = tasks.filter(t => t.subject === sub);
@@ -1760,9 +1777,12 @@ APP.views.dashboard = function (container) {
     const sm = l.subjectMin || {};
     return Number(l.minutes) > 0 || Number(sm.math) > 0 || Number(sm.cs) > 0 || Number(sm.eng) > 0 || Number(sm.pol) > 0 || Number(l.wordNew) > 0 || Number(l.wordOld) > 0 || Number(l.mathDone) > 0 || Number(l.csDone) > 0;
   }
-  // 每周习惯打卡（数据结构 / 高数 / 单词 / 长难句 / 语法，周一至周日，点格子标记）
+  // 每周习惯打卡（数据结构 / 高数 / 单词 / 长难句 / 语法）
+  // 自动派生为主：数据结构→专业课、高数→数学、单词→英语 三项随当日「学习打卡」时长自动点亮，无需重复点；
+  // 长难句 / 语法 为英语子活动无法从打卡细分，保留手动标记（可选）。
   function buildHabitCard() {
     const habits = ['数据结构', '高数', '单词', '长难句', '语法'];
+    const habitSubject = { '数据结构': 'cs', '高数': 'math', '单词': 'eng' }; // 可自动派生的习惯 → 对应打卡科目
     st.habitLog = st.habitLog || {};
     const ws = U.weekStart(today);
     const wkDays = []; for (let i = 0; i < 7; i++) wkDays.push(U.addDays(ws, i));
@@ -1770,9 +1790,15 @@ APP.views.dashboard = function (container) {
     const card = APP.el('div', { class: 'card' }, [
       APP.el('div', { class: 'spread' }, [
         APP.el('h3', { text: '每周习惯打卡', html: '' }),
-        APP.el('span', { class: 'muted', style: 'font-size:12px', text: '点格子标记当天完成' })
+        APP.el('span', { class: 'muted', style: 'font-size:12px', text: '随学习打卡自动点亮' })
       ])
     ]);
+    const habitDerived = (d, h) => {
+      const key = habitSubject[h];
+      if (!key) return false; // 长难句/语法 不自动派生
+      const l = st.studyLog[d];
+      return !!(l && (Number((l.subjectMin || {})[key]) || 0) > 0);
+    };
     const grid = APP.el('div', { class: 'habit-grid' });
     grid.appendChild(APP.el('div', {}));
     wkLabels.forEach(lab => grid.appendChild(APP.el('div', { class: 'habit-hdr', text: lab })));
@@ -1780,11 +1806,13 @@ APP.views.dashboard = function (container) {
       grid.appendChild(APP.el('div', { class: 'habit-row-label', text: h }));
       wkDays.forEach(d => {
         const future = d > today;
-        const on = !!(st.habitLog[d] && st.habitLog[d][h]);
+        const manual = !!(st.habitLog[d] && st.habitLog[d][h]);
+        const on = manual || habitDerived(d, h);
+        const auto = !manual && habitDerived(d, h);
         const cell = APP.el('div', {
           class: 'habit-cell' + (on ? ' on' : ''),
           style: future ? 'opacity:.35;cursor:not-allowed' : '',
-          title: d + ' · ' + h + (future ? '（未来）' : (on ? ' ✓ 已完成，点击取消' : '，点击标记完成')),
+          title: d + ' · ' + h + (future ? '（未来）' : (auto ? ' ✓ 由学习打卡自动点亮，点击取消' : on ? ' ✓ 已完成，点击取消' : '，点击标记完成')),
           onclick: () => {
             if (future) return;
             st.habitLog[d] = st.habitLog[d] || {};
@@ -1796,6 +1824,7 @@ APP.views.dashboard = function (container) {
       });
     });
     card.appendChild(grid);
+    card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:8px', text: '数据结构/高数/单词 在「学习打卡」里对应科目填了时长即自动亮；长难句/语法可手动点。一处录入，全局联动。' }));
     return card;
   }
   // 英语速览（首页显式展示英语情况）
@@ -4580,24 +4609,33 @@ APP.views.politics = function (container) {
   nCard.appendChild(ta);
   container.appendChild(nCard);
 
-  // 背诵打卡
+  // 背诵打卡（自动派生：在「学习打卡」里政治科目填了时长，即自动记为当日背诵打卡；手动补打卡仅作补充）
   const cCard = APP.el('div', { class: 'card' }, [APP.el('div', { class: 'spread' }, [
     APP.el('h3', { text: '背诵打卡 · ' + sub, html: '' }),
-    APP.el('button', { class: 'btn sm primary', text: '+ 今日打卡', onclick: checkIn })
+    APP.el('button', { class: 'btn sm ghost', text: '+ 补充打卡', onclick: checkIn })
   ])]);
-  const checkins = pol.checkins[sub] || [];
-  const last = checkins.length ? checkins[checkins.length - 1] : null;
+  // 自动派生：遍历 studyLog，政治时长>0 的日期记为自动打卡；再并入手动补打卡 checkins
+  const autoDays = Object.keys(st.studyLog).filter(d => Number((st.studyLog[d].subjectMin || {}).pol) > 0).sort();
+  const manualDays = (pol.checkins[sub] || []).slice().sort();
+  const allDays = [...new Set([...autoDays, ...manualDays])];
+  const last = allDays.length ? allDays[allDays.length - 1] : null;
+  const todayAuto = Number((st.studyLog[today] || {}).pol) > 0;
+  const todayManual = manualDays.includes(today);
   cCard.appendChild(APP.el('div', { class: 'row', style: 'margin-bottom:8px' }, [
-    APP.el('span', { class: 'muted', text: '累计 ' + checkins.length + ' 天' }),
+    APP.el('span', { class: 'muted', text: '累计 ' + allDays.length + ' 天' }),
     last ? APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: '最近 ' + last }) : null
   ]));
-  if (last === today) cCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '今天已打卡 ✓' }));
+  if (todayAuto || todayManual) {
+    cCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: todayAuto ? '今天已打卡 ✓（学习打卡自动计入）' : '今天已打卡 ✓（手动补充）' }));
+  } else {
+    cCard.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12.5px', text: '今天还没打卡，去「学习打卡」填政治时长即自动计入' }));
+  }
   container.appendChild(cCard);
   function checkIn() {
-    if ((pol.checkins[sub] || []).includes(today)) return APP.toast('今天已打卡');
+    if ((pol.checkins[sub] || []).includes(today)) return APP.toast('今天已打卡（无需重复）');
     pol.checkins[sub] = pol.checkins[sub] || [];
     pol.checkins[sub].push(today);
-    APP.store.save(); APP.toast('已打卡 ' + today); APP.refresh();
+    APP.store.save(); APP.toast('已补充打卡 ' + today); APP.refresh();
   }
 
   // 刷题记录（该科目）
