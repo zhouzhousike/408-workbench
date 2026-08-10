@@ -2847,7 +2847,7 @@ APP.views.english = function (container) {
     const recCard = APP.el('div', { class: 'card' }, [
       APP.el('div', { class: 'spread' }, [
         APP.el('h3', { text: '今日默写掌握情况', html: '' }),
-        APP.el('button', { class: 'btn sm primary', text: rec ? '编辑' : '录入', onclick: editRec })
+        APP.el('button', { class: 'btn sm primary', text: rec ? '编辑' : '录入', onclick: () => editRec(today) })
       ])
     ]);
     if (rec) {
@@ -2933,7 +2933,11 @@ APP.views.english = function (container) {
         return APP.el('div', { style: 'margin-top:8px' }, [
           APP.el('div', { class: 'spread', style: 'font-size:12px' }, [
             APP.el('span', { text: passOf(r) + ' · ' + (r.listName || r.date || '默写') + ' · ' + (r.date || '') }),
-            APP.el('span', { class: 'muted', text: acc + '% · ' + tot + ' 词' })
+            APP.el('span', { style: 'display:inline-flex;gap:6px;align-items:center' }, [
+              APP.el('span', { class: 'muted', text: acc + '% · ' + tot + ' 词' }),
+              APP.el('button', { class: 'btn sm ghost', style: 'padding:1px 7px;font-size:11px', text: '编辑', onclick: () => editRec(r.date) }),
+              APP.el('button', { class: 'btn sm ghost', style: 'padding:1px 7px;font-size:11px;color:var(--danger)', text: '删', onclick: () => { if (confirm('删除 ' + (r.date || '') + ' 的默写记录？')) { delete eng.wordRecords[r.date]; APP.store.save(); APP.refresh(); } } })
+            ])
           ]),
           APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + w + '%;background:' + color })])
         ]);
@@ -2974,36 +2978,34 @@ APP.views.english = function (container) {
         } })
       ]);
     }
-    function editRec() {
-      const rec = (eng.wordRecords || {})[today] || { total: 0, errCount: 0, suggestions: '' };
-      // 默认取历史第一个 List，方便今天继续复习；没有则新建 List 1
+    function editRec(date) {
+      date = date || today;
+      const rec = (eng.wordRecords || {})[date] || { total: 0, errCount: 0, suggestions: '' };
+      // 默认取历史第一个 List，方便继续复习；没有则新建 List 1
       const existingLists = [...new Set(Object.values(eng.wordRecords || {}).map(r => r.listName).filter(Boolean))];
       const firstList = existingLists[0] || 'List 1';
       const recListName = rec.listName || firstList;
-      let prevCount = 0;
-      Object.values(eng.wordRecords || {}).forEach(r => { if (r && r.listName === recListName && r.date && r.date < today) prevCount++; });
-      const derivedPass = passOrder[Math.min(prevCount, passOrder.length - 1)] || '一刷';
-      const defPass = derivedPass;
       const fTotal = APP.el('input', { type: 'number', value: rec.total || 0, placeholder: '总词数' });
       const fListName = APP.el('input', { value: recListName, placeholder: '如 List 1', style: 'min-width:120px' });
       const fErr = APP.el('input', { type: 'number', value: (typeof rec.errCount === 'number' ? rec.errCount : 0), placeholder: '错误数（不区分拼写/释义）' });
       const fSug = APP.el('textarea', { value: rec.suggestions || '', placeholder: '复习建议', style: 'min-height:60px' });
-      APP.openModal('录入默写掌握情况 · ' + today, APP.el('div', {}, [
+      APP.openModal((date === today ? '录入/编辑 今日默写掌握情况' : '编辑默写记录 · ' + date), APP.el('div', {}, [
+        APP.field('日期', APP.el('input', { value: date, disabled: true, style: 'opacity:.7' })),
         APP.field('总词数', fTotal),
         APP.field('List 名称（今天要复习的 List）', fListName),
         APP.field('错误数（不区分拼写/释义）', fErr),
         APP.field('复习建议', fSug)
       ]), [
         APP.el('button', { class: 'btn', text: '取消', onclick: APP.closeModal }),
-        APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { delete eng.wordRecords[today]; APP.store.save(); APP.closeModal(); APP.refresh(); } }),
+        APP.el('button', { class: 'btn danger', text: '删除', onclick: () => { if (confirm('删除 ' + date + ' 的默写记录？此操作不可恢复。')) { delete eng.wordRecords[date]; APP.store.save(); APP.closeModal(); APP.refresh(); } } }),
         APP.el('button', { class: 'btn primary', text: '保存', onclick: () => {
           const total = Number(fTotal.value) || 0;
           const errCount = Math.max(0, Number(fErr.value) || 0);
           const listName = fListName.value.trim() || rec.listName || firstList;
-          eng.wordRecords[today] = {
-            date: today, total, errCount, suggestions: fSug.value.trim(),
+          eng.wordRecords[date] = {
+            date: date, total, errCount, suggestions: fSug.value.trim(),
             reviewCount: rec.reviewCount || 0,
-            nextReview: rec.nextReview || U.addDays(today, 3),
+            nextReview: rec.nextReview || U.addDays(date, 3),
             listName
           };
           APP.store.save(); APP.closeModal(); APP.refresh();
