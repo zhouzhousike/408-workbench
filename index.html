@@ -947,7 +947,11 @@ window.APP = window.APP || {};
     save();
   }
   function exportJSON() {
-    return JSON.stringify(state, null, 2);
+    const data = JSON.parse(JSON.stringify(state));
+    data.meta = data.meta || {};
+    // 写入同步时间戳，供多端判断「谁更新」以决定下载覆盖
+    data.meta._syncTime = new Date().toISOString();
+    return JSON.stringify(data, null, 2);
   }
   function importJSON(str) {
     const data = JSON.parse(str);
@@ -5150,6 +5154,8 @@ window.APP = window.APP || {};
 (function (APP) {
   const REMOTE_PATH = '/408-workbench-backup.json';
   let uploadTimer = null;
+  // 初始化期间抑制自动上传，避免用本地旧数据覆盖云端之前下载完成
+  let suppressAutoUpload = false;
 
   function getCfg() {
     const st = APP.store.get();
@@ -5224,11 +5230,12 @@ window.APP = window.APP || {};
       const text = await res.text();
       const remote = JSON.parse(text);
       const local = APP.store.get();
-      const localTime = local.meta && local.meta._syncTime ? local.meta._syncTime : '';
-      const remoteTime = remote.meta && remote.meta._syncTime ? remote.meta._syncTime : '';
+      // 优先用 _syncTime 判断，缺失时回退到 webdav.lastSync，再回退到空串
+      const localTime = (local.meta && local.meta._syncTime) || (local.settings && local.settings.webdav && local.settings.webdav.lastSync) || '';
+      const remoteTime = (remote.meta && remote.meta._syncTime) || (remote.settings && remote.settings.webdav && remote.settings.webdav.lastSync) || '';
       // 无冲突直接覆盖
       if (!remoteTime || (localTime && localTime >= remoteTime)) {
-        // 本地更新，无需覆盖
+        // 本地更新（或双方时间戳相同/缺失），无需覆盖
         return { ok: true, action: 'noop', msg: '本地已是最新' };
       }
       // 有更新
@@ -5250,6 +5257,7 @@ window.APP = window.APP || {};
   APP.syncAutoUpload = function () {
     const cfg = getCfg();
     if (!cfg.enabled) return;
+    if (suppressAutoUpload) return;
     if (uploadTimer) clearTimeout(uploadTimer);
     uploadTimer = setTimeout(() => {
       APP.syncUpload({ silent: true });
@@ -5262,13 +5270,13 @@ window.APP = window.APP || {};
     const localTime = (local.meta && local.meta._syncTime) || '未知';
     const remoteTime = (remote.meta && remote.meta._syncTime) || '未知';
     const body = APP.el('div', {}, [
-      APP.el('div', { style: 'font-size:13px;margin-bottom:12px', text: '本地和云端数据不一致，请选择保留哪一份：' }),
+      APP.el('div', { style: 'font-size:13px;margin-bottom:12px', text: '本设备（电脑）与云端（iPad 等上传）数据不一致，请选择保留哪一份：' }),
       APP.el('div', { class: 'card', style: 'margin-bottom:10px;padding:10px' }, [
-        APP.el('div', { style: 'font-weight:600;margin-bottom:4px', text: '本地数据' }),
+        APP.el('div', { style: 'font-weight:600;margin-bottom:4px', text: '本机数据（电脑当前）' }),
         APP.el('div', { class: 'muted', style: 'font-size:12px', text: '最后同步：' + localTime })
       ]),
       APP.el('div', { class: 'card', style: 'margin-bottom:10px;padding:10px' }, [
-        APP.el('div', { style: 'font-weight:600;margin-bottom:4px', text: '云端数据' }),
+        APP.el('div', { style: 'font-weight:600;margin-bottom:4px', text: '云端数据（iPad 等上传）' }),
         APP.el('div', { class: 'muted', style: 'font-size:12px', text: '最后同步：' + remoteTime })
       ])
     ]);
@@ -5430,15 +5438,22 @@ window.APP = window.APP || {};
 
   function init() {
     APP.store.load();
-    // WebDAV 自动拉取（首次打开页面时）
+    // WebDAV 自动拉取（首次打开页面时）；先抑制自动上传，避免覆盖云端
+    suppressAutoUpload = true;
     (async () => {
       const st = APP.store.get();
       const wv = st.settings && st.settings.webdav;
       if (wv && wv.enabled && APP.syncDownload) {
         const r = await APP.syncDownload({ auto: true });
-        if (r.action === 'conflict' && r.remote) { APP.syncResolveConflict(r.remote); }
-        else if (r.ok && r.action === 'restored') { APP.refresh(); }
+        if (r.action === 'conflict' && r.remote) {
+          APP.syncResolveConflict(r.remote);
+        } else if (r.ok && r.action === 'restored') {
+          APP.refresh();
+        }
       }
+      // 下载结束后再放开自动上传，并把当前（可能已更新的）状态上传一次以同步 _syncTime
+      suppressAutoUpload = false;
+      APP.syncAutoUpload();
     })();
     buildNav();
     // 侧栏折叠（点击品牌区）
