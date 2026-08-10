@@ -944,7 +944,10 @@ window.APP = window.APP || {};
     state.settings = keepSettings;
     // 保留用户可能改过的考试日期等，同时保留 backfilled 标记，防止 init 重新补录 8.3 演示数据
     state.meta = Object.assign({}, fresh.meta, keepMeta, { backfilled: keepMeta.backfilled || {} });
+    // 抑制清空后的自动上传：空数据若上传会覆盖云端（iPad 等）已备份的记录。清空后请在「设置」手动上传或下载。
+    APP._suppressAutoUpload = true;
     save();
+    APP._suppressAutoUpload = false;
   }
   function exportJSON() {
     const data = JSON.parse(JSON.stringify(state));
@@ -5154,8 +5157,8 @@ window.APP = window.APP || {};
 (function (APP) {
   const REMOTE_PATH = '/408-workbench-backup.json';
   let uploadTimer = null;
-  // 初始化期间抑制自动上传，避免用本地旧数据覆盖云端之前下载完成
-  let suppressAutoUpload = false;
+  // 抑制自动上传标志（初始化下载期间置 true），跨 IIFE 用 APP._suppressAutoUpload 共享
+  APP._suppressAutoUpload = false;
 
   function getCfg() {
     const st = APP.store.get();
@@ -5233,20 +5236,21 @@ window.APP = window.APP || {};
       // 优先用 _syncTime 判断，缺失时回退到 webdav.lastSync，再回退到空串
       const localTime = (local.meta && local.meta._syncTime) || (local.settings && local.settings.webdav && local.settings.webdav.lastSync) || '';
       const remoteTime = (remote.meta && remote.meta._syncTime) || (remote.settings && remote.settings.webdav && remote.settings.webdav.lastSync) || '';
-      // 无冲突直接覆盖
-      if (!remoteTime || (localTime && localTime >= remoteTime)) {
-        // 本地更新（或双方时间戳相同/缺失），无需覆盖
-        return { ok: true, action: 'noop', msg: '本地已是最新' };
+      // 云端严格比本地新 → 自动覆盖
+      if (remoteTime && (!localTime || remoteTime > localTime)) {
+        APP.store.importJSON(text);
+        APP.toast('☁ 已从云端（iPad 等）恢复最新数据');
+        return { ok: true, action: 'restored', msg: '已恢复' };
       }
-      // 有更新
-      if (opts && opts.auto && !opts.force) {
-        // 自动模式下提示冲突
-        return { ok: true, action: 'conflict', remote, msg: '发现云端更新' };
+      // 其余情况（本地更新 / 时间戳相同 / 缺失）不静默覆盖，交给用户选择，避免误删云端数据
+      if (opts && opts.force) {
+        // 手动「立即下载」：强制用云端覆盖本地
+        APP.store.importJSON(text);
+        APP.toast('☁ 已从云端恢复数据');
+        return { ok: true, action: 'restored', msg: '已恢复' };
       }
-      // 强制覆盖本地
-      APP.store.importJSON(text);
-      APP.toast('☁ 已从坚果云恢复数据');
-      return { ok: true, action: 'restored', msg: '已恢复' };
+      // 自动模式：提示冲突，由用户决定，不自动覆盖
+      return { ok: true, action: 'conflict', remote, msg: '检测到云端已有数据，请选择保留哪一份' };
     } catch (e) {
       console.error('[sync download] error:', e);
       return { ok: false, msg: '下载失败：' + (e.message || '网络错误') };
@@ -5257,7 +5261,7 @@ window.APP = window.APP || {};
   APP.syncAutoUpload = function () {
     const cfg = getCfg();
     if (!cfg.enabled) return;
-    if (suppressAutoUpload) return;
+    if (APP._suppressAutoUpload) return;
     if (uploadTimer) clearTimeout(uploadTimer);
     uploadTimer = setTimeout(() => {
       APP.syncUpload({ silent: true });
@@ -5386,7 +5390,7 @@ window.APP = window.APP || {};
           syncStatus.textContent = r.ok ? '上传成功 · ' + (APP.store.get().settings.webdav.lastSync || '') : r.msg;
         } }),
         APP.el('button', { class: 'btn', text: '立即下载', onclick: async () => {
-          const r = await APP.syncDownload();
+          const r = await APP.syncDownload({ force: true });
           if (r.action === 'conflict' && r.remote) { APP.syncResolveConflict(r.remote); }
           else { syncStatus.textContent = r.msg; if (r.ok && r.action === 'restored') APP.refresh(); }
         } })
@@ -5438,8 +5442,8 @@ window.APP = window.APP || {};
 
   function init() {
     APP.store.load();
-    // WebDAV 自动拉取（首次打开页面时）；先抑制自动上传，避免覆盖云端
-    suppressAutoUpload = true;
+    // WebDAV 自动拉取（首次打开页面时）；先抑制自动上传，避免用本地旧数据覆盖云端
+    APP._suppressAutoUpload = true;
     (async () => {
       const st = APP.store.get();
       const wv = st.settings && st.settings.webdav;
@@ -5451,8 +5455,8 @@ window.APP = window.APP || {};
           APP.refresh();
         }
       }
-      // 下载结束后再放开自动上传，并把当前（可能已更新的）状态上传一次以同步 _syncTime
-      suppressAutoUpload = false;
+      // 下载结束后再放开自动上传；本地若已被云端更新，这里会把最新状态上传一次以同步 _syncTime
+      APP._suppressAutoUpload = false;
       APP.syncAutoUpload();
     })();
     buildNav();
