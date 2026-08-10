@@ -1786,6 +1786,17 @@ APP.views.dashboard = function (container) {
     const log = st.studyLog[today] || {};
     const sm = log.subjectMin || {};
     const doneSome = () => APP.wordNewOnDate(today) > 0 || Number(log.wordOld) > 0 || APP.practiceDoneOnDate(today, '数学一') > 0 || APP.practiceDoneOnDate(today, '408') > 0;
+    function recentCheckin() {
+      let d = U.addDays(today, -1);
+      while (d >= '2026-01-01') {
+        const l = st.studyLog[d] || {}; const m = l.subjectMin || {};
+        const wn = APP.wordNewOnDate(d), wo = Number(l.wordOld) || 0;
+        const md = APP.practiceDoneOnDate(d, '数学一'), cd = APP.practiceDoneOnDate(d, '408');
+        if (Number(l.minutes) > 0 || m.math || m.cs || m.eng || m.pol || wn > 0 || wo > 0 || md > 0 || cd > 0) return { d, l, wn, wo, md, cd };
+        d = U.addDays(d, -1);
+      }
+      return null;
+    }
     const checked = log && (Number(log.minutes) > 0 || (sm.math || sm.cs || sm.eng || sm.pol) || doneSome());
     const card = APP.el('div', { class: 'card' }, [APP.el('h3', { text: '今日打卡', html: '' })]);
     if (checked) {
@@ -1801,12 +1812,22 @@ APP.views.dashboard = function (container) {
         APP.el('button', { class: 'btn primary', text: '修改打卡', onclick: () => APP._navigate('diary') })
       ]));
     } else {
-      card.appendChild(APP.el('div', { class: 'muted', style: 'margin-bottom:10px', text: '今日还未打卡' }));
+      card.appendChild(APP.el('div', { class: 'muted', style: 'margin-bottom:10px', text: '今日（' + today + '）还未打卡' }));
       card.appendChild(APP.el('div', { class: 'row', style: 'gap:8px' }, [
         APP.el('button', { class: 'btn primary', text: '去打卡', onclick: () => APP._navigate('diary') }),
         APP.el('button', { class: 'btn ghost', text: '补录往日', onclick: () => APP._navigate('diary') })
       ]));
       card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:8px', text: '进入打卡页后，点左上角日期可切换任意日期补录。' }));
+      const rc = recentCheckin();
+      if (rc) {
+        const parts = [];
+        const mins = Number(rc.l.minutes) || 0; if (mins) parts.push(mins + ' min');
+        if (rc.wn) parts.push('新词' + rc.wn);
+        if (rc.wo) parts.push('旧词' + rc.wo);
+        if (rc.md) parts.push('数学' + rc.md + '题');
+        if (rc.cd) parts.push('专业课' + rc.cd + '题');
+        card.appendChild(APP.el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)', text: '最近打卡：' + rc.d + (parts.length ? '（' + parts.join(' · ') + '）' : '（无明细）') }));
+      }
     }
     // 本周已打卡天数
     const wks = U.weekStart(today);
@@ -1845,8 +1866,9 @@ APP.views.dashboard = function (container) {
       const a = subjTotal > 0 ? min / subjTotal : 0;
       let warn = false;
       if (tgt > 0) { if (Math.abs(a - tgt) / tgt > 0.3) warn = true; } else if (min > 0) warn = true;
-      const showWarnIcon = warn && (label === '英语一' || label === '政治');
-      card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:4px;font-size:12.5px' + (warn ? ';color:var(--danger);font-weight:600' : '') }, [
+      const isWarnSubject = label === '政治'; // 仅政治显示失衡警告；英语按用户要求不显示感叹号/标红
+      const showWarnIcon = warn && isWarnSubject;
+      card.appendChild(APP.el('div', { class: 'spread', style: 'margin-top:4px;font-size:12.5px' + (warn && isWarnSubject ? ';color:var(--danger);font-weight:600' : '') }, [
         APP.el('span', { text: label }),
         APP.el('span', { class: 'muted', text: Math.round(min / 60 * 10) / 10 + 'h' + (showWarnIcon ? ' ⚠' : '') })
       ]));
@@ -5029,7 +5051,17 @@ APP.views.analytics = function (container) {
     const _range = (s, e) => { const o = []; let d = s; while (d <= e) { o.push(d); d = U.addDays(d, 1); } return o; };
     if (p === 'week') { const m = U.addDays(today, -_dow(y, mo, dd)); return _range(m, U.addDays(m, 6)); } // 本周一~周日
     if (p === 'month') { const first = y + '-' + String(mo).padStart(2, '0') + '-01'; const ld = new Date(y, mo, 0).getDate(); const last = y + '-' + String(mo).padStart(2, '0') + '-' + String(ld).padStart(2, '0'); return _range(first, last); } // 本月1号~月末
-    return _range('2026-08-03', today); // 全部：从实际学习起点 8/3 起
+    return _range(earliestDataDate(), today); // 全部：从最早一条记录起到今天
+  }
+  function earliestDataDate() {
+    const dates = [];
+    Object.keys(st.studyLog || {}).forEach(d => dates.push(d));
+    (st.dailyPractice || []).forEach(r => r.date && dates.push(r.date));
+    const wr = (st.english && st.english.wordRecords) || {};
+    Object.keys(wr).forEach(d => dates.push(d));
+    if (!dates.length) return today;
+    dates.sort();
+    return dates[0];
   }
   container.appendChild(APP.el('div', { class: 'row', style: 'gap:8px;margin-bottom:14px;align-items:center' }, [
     APP.el('span', { class: 'muted', style: 'font-size:12px', text: '时间范围' }),
@@ -5040,6 +5072,7 @@ APP.views.analytics = function (container) {
       onclick: () => { APP._daPeriod = k; APP.refresh(); }
     }))
   ]));
+  container.appendChild(APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin:-6px 0 14px', text: '规则：本周 = 本周一~周日；本月 = 当月1号~月末；全部 = 你最早一条记录 ~ 今天' }));
 
   // ---------- P5 新增：三张原生 SVG 图表 ----------
   container.appendChild(weeklyStackedBar());
@@ -5099,9 +5132,11 @@ APP.views.analytics = function (container) {
   });
   container.appendChild(masteryCard('数学各科掌握度（知识点平均掌握 0-5）', mathItems));
 
-  // 英语掌握度（能力六维 0-5，在「英语 → 能力」录入）
-  const engAbility = (st.english && st.english.ability) || {};
-  const engItems = Object.keys(engAbility).map(k => ({ name: k, score: Number(engAbility[k]) || 0, count: 1 }));
+  // 英语掌握度（能力六维 0-5）：合并「自动评估 st.ability['英语一']」与「手动录入 st.english.ability」，取较大值，保证两侧任一更新都可见
+  const engA = (st.english && st.english.ability) || {};
+  const engB = (st.ability && st.ability['英语一']) || {};
+  const engKeys = new Set([...Object.keys(engA), ...Object.keys(engB)]);
+  const engItems = [...engKeys].map(k => ({ name: k, score: Math.max(Number(engA[k]) || 0, Number(engB[k]) || 0), count: 1 }));
   container.appendChild(masteryCard('英语掌握度（能力六维 0-5）', engItems));
 
   // 政治掌握度（按科目进度 0-100 → 0-5）
@@ -5307,7 +5342,7 @@ APP.views.analytics = function (container) {
       if (mAcc != null || cAcc != null) any = true;
       days.push({ mAcc, cAcc });
     });
-    if (!any) { card.appendChild(APP.el('div', { class: 'empty', text: '暂无做题数据，打卡后这里会显示图表（已打卡 ' + checkedDaysCount() + ' 天）' })); return card; }
+    if (!any) { card.appendChild(APP.el('div', { class: 'empty', text: '暂无做题数据 → 去「错题复盘」页录入每日刷题（含章节 / 题量 / 对错）后，曲线会自动出现（已打卡 ' + checkedDaysCount() + ' 天）' })); return card; }
     const W = 680, H = 220, padL = 34, padR = 10, padT = 12, padB = 22;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const xOf = i => padL + (days.length === 1 ? plotW / 2 : i / (days.length - 1) * plotW);
@@ -5315,10 +5350,11 @@ APP.views.analytics = function (container) {
     const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, style: 'width:100%;height:auto;display:block' });
     for (let g = 0; g <= 100; g += 20) { const y = yOf(g); svg.appendChild(svgEl('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#E3E5E1' })); svg.appendChild(svgEl('text', { x: padL - 4, y: y + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#9aa' }, [svgTxt(g + '%')])); }
     const drawAcc = (key, color) => {
-      let seg = [];
+      let seg = []; const pts = [];
       const flush = () => { if (seg.length > 1) svg.appendChild(svgEl('polyline', { points: seg.join(' '), fill: 'none', stroke: color, 'stroke-width': 2 })); seg = []; };
-      days.forEach((x, i) => { const v = x[key]; if (v == null) { flush(); return; } seg.push(xOf(i) + ',' + yOf(v)); });
+      days.forEach((x, i) => { const v = x[key]; if (v == null) { flush(); return; } seg.push(xOf(i) + ',' + yOf(v)); pts.push([xOf(i), yOf(v)]); });
       flush();
+      pts.forEach(([px, py]) => svg.appendChild(svgEl('circle', { cx: px, cy: py, r: 2.6, fill: color })));
     };
     drawAcc('mAcc', '#18202B');
     drawAcc('cAcc', '#93A4C1');
