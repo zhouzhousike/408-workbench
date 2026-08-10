@@ -530,7 +530,7 @@ window.APP = window.APP || {};
   APP.wordReviewDate = function (reciteDate, reviewCount) {
     const i = Math.max(0, Number(reviewCount) || 0);
     if (i >= APP.WORD_REVIEW_OFFSETS.length) return ''; // 5 次复习全部完成，不再提醒
-    return U.addDays(reciteDate, APP.WORD_REVIEW_OFFSETS[i]);
+    return APP.util.addDays(reciteDate, APP.WORD_REVIEW_OFFSETS[i]);
   };
 
   // ---------- date utils ----------
