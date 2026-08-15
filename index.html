@@ -861,7 +861,6 @@ window.APP = window.APP || {};
       politics: seedPolitics(),
       reviews: { weekly: [], monthly: [] },
       ability: seedAbility(),
-      weekTypeOverride: {},
       dailyPractice: [],
       monthlyTasks: [],
       todayReviewed: {},
@@ -1193,17 +1192,8 @@ window.APP = window.APP || {};
     return min + 'min';
   };
 
-  // 大小周推算：基准 2026-08-03 = 大周（双休）；支持按周手动覆盖（state.weekTypeOverride[周一]）
-  APP.weekTypeFor = function (d) {
-    const ws = APP.util.weekStart(d);
-    const ov = (state.weekTypeOverride || {})[ws];
-    if (ov === '大周' || ov === '小周') return ov;
-    const ref = APP.util.weekStart('2026-08-03');
-    const diff = Math.round((new Date(ws) - new Date(ref)) / (7 * 864e5));
-    return (diff % 2 === 0) ? '大周' : '小周';
-  };
   // 数学章节进度按打卡自动判定：依据建议周次(targetWeek)与 studyLog 的数学打卡
-  // 基准：W1 周一 = 2026-08-03（与 weekTypeFor 基准一致）；只判定有 targetWeek 的章节
+  // 基准：W1 周一 = 2026-08-03；只判定有 targetWeek 的章节
   APP.autoAssessMath = function (st) {
     if (!st || !st.math) return;
     const U = APP.util;
@@ -1844,17 +1834,14 @@ APP.views.dashboard = function (container) {
     return APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: label + ' ' + (Number(min) || 0) + '分' });
   }
   function buildWeekGoalCard() {
-    const ws0 = U.weekStart(today);
-    const wt = (st.weekTypeOverride && st.weekTypeOverride[ws0]) || APP.weekTypeFor(today);
-    const targetH = wt === '大周' ? 41 : 33;
     const ws = U.weekStart(today);
+    const targetH = 37;
     const wk = weekSubjectMin(ws);
     const curH = wk.total / 60;
     const pct = Math.min(100, Math.round(curH / targetH * 100));
     const card = APP.el('div', { class: 'card' }, [
       APP.el('div', { class: 'spread' }, [
-        APP.el('h3', { text: '本周目标', html: '' }),
-        APP.el('div', { class: 'row', style: 'gap:6px' }, [wtToggle('小周'), wtToggle('大周')])
+        APP.el('h3', { text: '本周目标', html: '' })
       ]),
       APP.el('div', { class: 'sub', text: '累计 ' + curH.toFixed(1) + 'h / 目标 ' + targetH + 'h（' + (pct > 100 ? '已超额' : pct + '%') + '）' }),
       APP.el('div', { class: 'bar' }, [APP.el('i', { style: 'width:' + Math.min(100, pct) + '%' })]),
@@ -1873,12 +1860,6 @@ APP.views.dashboard = function (container) {
       ]));
     });
     return card;
-  }
-  function wtToggle(t) {
-    const ws0 = U.weekStart(today);
-    const cur = (st.weekTypeOverride && st.weekTypeOverride[ws0]) || APP.weekTypeFor(today);
-    const active = cur === t;
-    return APP.el('button', { class: 'chip' + (active ? ' active' : ''), style: active ? 'border-color:var(--accent);background:var(--accent);color:#fff;font-weight:600' : '', text: t, onclick: () => { st.weekTypeOverride = st.weekTypeOverride || {}; st.weekTypeOverride[ws0] = t; APP.store.save(); APP.refresh(); } });
   }
   function weekSubjectMin(ws) {
     let d = ws, m = { math: 0, cs: 0, eng: 0, pol: 0 }, total = 0;
@@ -4130,9 +4111,6 @@ APP.views.diary = function (container) {
   const log = st.studyLog[date] || {};
   const sm = log.subjectMin || { math: 0, cs: 0, eng: 0, pol: 0 };
   const sumMin = (Number(sm.math) || 0) + (Number(sm.cs) || 0) + (Number(sm.eng) || 0) + (Number(sm.pol) || 0);
-  const weekStartKey = U.weekStart(date);
-  const defaultWeekType = (st.weekTypeOverride && st.weekTypeOverride[weekStartKey]) || weekTypeFor(date);
-  const weekType = log.weekType || defaultWeekType;
   let energy = Number(log.energy) || 0;
 
   const head = APP.el('div', { class: 'page-head' }, [
@@ -4171,29 +4149,12 @@ APP.views.diary = function (container) {
     const next = Object.assign({}, log, {
       minutes: minutes, subjectMin: sm2,
       wordNew: Number(fWordNew.value) || 0, wordOld: Number(fWordOld.value) || 0,
-      weekType: weekType, note: fNote.value, energy: energy, firstTask: fFirst.value,
+      note: fNote.value, energy: energy, firstTask: fFirst.value,
       gains: fGain.value, problems: fProb.value, planTomorrow: fPlan.value
     });
     if (log.tasks) next.tasks = log.tasks;
     st.studyLog[date] = next;
     APP.store.save();
-  }
-
-  // weekType chips（写入本周覆盖，大小周不严格轮换时一键翻转整周）
-  const wtChips = APP.el('div', { class: 'row', style: 'gap:8px' }, [wtChip('小周'), wtChip('大周')]);
-  function wtChip(t) {
-    const active = weekType === t;
-    return APP.el('button', {
-      class: 'chip' + (active ? ' active' : ''),
-      style: active ? 'border-color:var(--accent);background:var(--accent);color:#fff;font-weight:600' : '',
-      text: t === '大周' ? '大周（双休）' : '小周（单休）',
-      onclick: () => {
-        weekType = t;
-        st.weekTypeOverride = st.weekTypeOverride || {};
-        st.weekTypeOverride[weekStartKey] = t;
-        save(); APP.refresh();
-      }
-    });
   }
 
   // energy blocks (1-5)
@@ -4240,7 +4201,7 @@ APP.views.diary = function (container) {
   const checkin = APP.el('div', { class: 'card' }, [
     APP.el('div', { class: 'spread' }, [
       APP.el('h3', { text: '今日打卡 · ' + date, html: '' }),
-      APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: weekType + ' · 目标' + (weekType === '大周' ? '41h' : '33h') })
+      APP.el('span', { class: 'pill', style: 'background:var(--accent-soft);color:var(--accent)', text: '目标 37h' })
     ]),
     APP.el('div', { class: 'sub', text: '必填：各科时长（min）；总时长自动 = 四科之和' }),
     APP.el('div', { class: 'grid grid-4', style: 'margin-top:10px' }, [
@@ -4267,8 +4228,6 @@ APP.views.diary = function (container) {
     })(),
     APP.el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:6px', text: '在「错题复盘」页录入每日刷题（含章节 / 来源 / 错题），正确率与题量会自动同步到这里、数据分析、正确率曲线。' }),
     APP.el('div', { class: 'hr' }),
-    APP.el('div', { class: 'sub', text: '大小周标记（默认按本周推算）' }),
-    APP.el('div', { style: 'margin-top:8px' }, wtChips),
     APP.el('details', {}, [
       APP.el('summary', { style: 'cursor:pointer;color:var(--accent);font-size:13px;margin:10px 0', text: '选填 · 精力自评 / 明日第一件事' }),
       APP.el('div', { class: 'sub', text: '精力自评（1-5 分，点方块）' }),
@@ -4434,8 +4393,7 @@ APP.views.diary = function (container) {
     const X = U.daysBetween(ws, date) + 1;
     const Y = ae.checkedDays;
     const rate = X ? Math.round(Y / X * 100) : 0;
-    const wt = majorityWeekType(ws, date);
-    const target = wt === '大周' ? 41 : 33;
+    const target = 37;
     const subjTotal = ae.math + ae.cs + ae.eng;
     const shareOf = (m) => subjTotal > 0 ? m / subjTotal : 0;
     const targets = { math: 2 / 4.5, cs: 1.5 / 4.5, eng: 1 / 4.5 };
@@ -4451,7 +4409,7 @@ APP.views.diary = function (container) {
     const csAcc = ae.csDone > 0 ? Math.round((ae.csDone - ae.csWrong) / ae.csDone * 100) : '—';
     const content = `统计区间：${ws} ~ ${date}
 出勤：${X}天 / 已打卡${Y}天（出勤率${rate}%）
-本周总时长：${(ae.totalMin / 60).toFixed(1)}h / 目标 ${target}h（${wt}）
+本周总时长：${(ae.totalMin / 60).toFixed(1)}h / 目标 ${target}h
 各科时长：数学${ae.math}min · 专业课 ${ae.cs}min · 英语${ae.eng}min · 政治${ae.pol}min
 ${imbalance.length ? '⚠ 失衡科目：' + imbalance.join('、') : '科目配比健康 ✓'}
 单词：新词${ae.wordNew}个 · 旧词复习${ae.wordOld}个
@@ -4483,25 +4441,6 @@ ${ae.probs.join('\n') || '（无）'}
   }
 
   // ---------- helpers ----------
-  // 大小周推算：基准 2026-08-03 = 大周（双休）；支持按周手动覆盖（st.weekTypeOverride[周一]）
-  function weekTypeFor(d) {
-    const ws = U.weekStart(d);
-    const ov = (APP.store.get().weekTypeOverride || {})[ws];
-    if (ov === '大周' || ov === '小周') return ov;
-    const ref = U.weekStart('2026-08-03');
-    const diff = Math.round((new Date(ws) - new Date(ref)) / (7 * 864e5));
-    return (diff % 2 === 0) ? '大周' : '小周';
-  }
-  function majorityWeekType(ws, today) {
-    let xw = 0, dw = 0; let d = ws;
-    while (d <= today) {
-      const t = (st.studyLog[d] || {}).weekType;
-      if (t === '小周') xw++; else if (t === '大周') dw++;
-      d = U.addDays(d, 1);
-    }
-    if (xw === 0 && dw === 0) return weekTypeFor(today);
-    return xw >= dw ? '小周' : '大周';
-  }
   function subjInput(label, input) {
     return APP.el('div', {}, [
       APP.el('div', { class: 'label', style: 'font-size:12px;margin-bottom:4px', text: label }),
