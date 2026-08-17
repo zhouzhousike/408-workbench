@@ -5659,9 +5659,17 @@ window.APP = window.APP || {};
         }
         return { ok: true, action: 'conflict', remote, msg: '请选择保留哪一份' };
       }
-      // ③ 自动模式（打开页面）：本机已有数据则一律保留本机，绝不弹窗、绝不覆盖，
-      //    避免陈旧的云端记录把刚录入的本地数据无声冲掉（8/9 记录被 3号 覆盖即源于此）
-      return { ok: true, action: 'noop', msg: '本机已有数据，已保留本地（如需拉取云端请点「立即下载」）' };
+      // ③ 自动模式（打开页面）本机已有数据：绝不弹窗、绝不覆盖任一方
+      if (!remoteHasData) {
+        // 云端为空：把本地作为首次备份上传（无害）
+        return { ok: true, action: 'needUpload', msg: '云端为空，已保留本地（将上传备份）' };
+      }
+      // 双方都有数据：时间戳一致则无需操作；不一致则跳过后续自动上传，
+      // 以免把云端可能更新的副本冲掉，由用户手动「立即同步」抉择
+      if (localTime && remoteTime && localTime !== remoteTime) {
+        return { ok: true, action: 'keepLocalNoUpload', msg: '本机与云端数据不一致，已保留本机（请手动「立即同步」抉择）' };
+      }
+      return { ok: true, action: 'noop', msg: '本机与云端一致，已是最新' };
     } catch (e) {
       console.error('[sync download] error:', e);
       return { ok: false, msg: '下载失败：' + (e.message || '网络错误') };
@@ -5867,17 +5875,21 @@ window.APP = window.APP || {};
     (async () => {
       const st = APP.store.get();
       const wv = st.settings && st.settings.webdav;
+      let r = { action: 'noop' };
       if (wv && wv.enabled && APP.syncDownload) {
-        const r = await APP.syncDownload({ auto: true });
+        r = await APP.syncDownload({ auto: true });
         if (r.action === 'conflict' && r.remote) {
           APP.syncResolveConflict(r.remote);
         } else if (r.ok && r.action === 'restored') {
           APP.refresh();
         }
       }
-      // 下载结束后再放开自动上传；本地若已被云端更新，这里会把最新状态上传一次以同步 _syncTime
+      // 下载结束后再放开自动上传；但若本次检测到「本机与云端不一致」，跳过自动上传，
+      // 以免把云端可能更新的副本（如你重录的 8/9 记录）用本地旧数据冲掉。由用户手动「立即同步」抉择。
       APP._suppressAutoUpload = false;
-      APP.syncAutoUpload();
+      if (r.action !== 'keepLocalNoUpload') {
+        APP.syncAutoUpload();
+      }
     })();
     buildNav();
     // 侧栏折叠（点击品牌区）
