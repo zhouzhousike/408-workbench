@@ -5641,24 +5641,27 @@ window.APP = window.APP || {};
       const local = APP.store.get();
       const localTime = (local.meta && local.meta._syncTime) || (local.settings && local.settings.webdav && local.settings.webdav.lastSync) || '';
       const remoteTime = (remote.meta && remote.meta._syncTime) || (remote.settings && remote.settings.webdav && remote.settings.webdav.lastSync) || '';
-      // 云端严格比本地新 且 云端非空 → 自动覆盖
-      if (remoteTime && (!localTime || remoteTime > localTime) && !isEmptyState(remote)) {
+      // 安全策略：仅当「本机完全无学习数据」且云端非空时，才自动从云端拉取（首次/新设备场景）。
+      // 其余情况（本机已有学习记录，如清空重录后的 8/9 号）一律进入冲突流程，绝不一律静默覆盖，
+      // 避免陈旧的云端记录把本机刚录入的新数据无声冲掉。
+      const localHasData = !isEmptyState(local);
+      const remoteHasData = !isEmptyState(remote);
+      // ① 本机完全无数据（首次 / 新设备）且云端有 → 自动从云端拉取
+      if (!localHasData && remoteHasData) {
         APP.store.importJSON(text);
-        APP.toast('☁ 已从云端（iPad 等）恢复最新数据');
+        APP.toast('☁ 已从云端恢复数据（本机首次同步）');
         return { ok: true, action: 'restored', msg: '已恢复' };
       }
-      // 其余情况（本地更新 / 时间戳相同 / 缺失）不静默覆盖，交给用户选择，避免误删云端数据
+      // ② 手动「立即下载」：本机有数据时不静默覆盖，弹选择框让用户主动抉择（默认不覆盖）
       if (opts && opts.force) {
-        // 手动「立即下载」：若云端为空而本地有数据，拒绝覆盖，避免清空端冲掉有数据端
-        if (isEmptyState(remote) && !isEmptyState(local)) {
+        if (!remoteHasData && localHasData) {
           return { ok: true, action: 'noop', msg: '云端为空，已保留本地数据（未覆盖）' };
         }
-        APP.store.importJSON(text);
-        APP.toast('☁ 已从云端恢复数据');
-        return { ok: true, action: 'restored', msg: '已恢复' };
+        return { ok: true, action: 'conflict', remote, msg: '请选择保留哪一份' };
       }
-      // 自动模式：提示冲突，由用户决定，不自动覆盖
-      return { ok: true, action: 'conflict', remote, msg: '检测到云端已有数据，请选择保留哪一份' };
+      // ③ 自动模式（打开页面）：本机已有数据则一律保留本机，绝不弹窗、绝不覆盖，
+      //    避免陈旧的云端记录把刚录入的本地数据无声冲掉（8/9 记录被 3号 覆盖即源于此）
+      return { ok: true, action: 'noop', msg: '本机已有数据，已保留本地（如需拉取云端请点「立即下载」）' };
     } catch (e) {
       console.error('[sync download] error:', e);
       return { ok: false, msg: '下载失败：' + (e.message || '网络错误') };
