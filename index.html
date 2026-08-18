@@ -5878,8 +5878,10 @@ window.APP = window.APP || {};
       let r = { action: 'noop' };
       if (wv && wv.enabled && APP.syncDownload) {
         r = await APP.syncDownload({ auto: true });
+        // 自动同步模式：永不弹冲突框。检测到本机与云端不一致时静默保留本机，
+        // 仅用轻量提示引导用户手动「立即下载」抉择，避免开机/打开页面即弹窗。
         if (r.action === 'conflict' && r.remote) {
-          APP.syncResolveConflict(r.remote);
+          APP.toast('检测到云端有不同版本，可在设置页「立即下载」查看');
         } else if (r.ok && r.action === 'restored') {
           APP.refresh();
         }
